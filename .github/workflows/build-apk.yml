@@ -82,7 +82,7 @@ jobs:
             ten_min_rescue/build/app/outputs/flutter-apk/app-x86_64-release.apk
           generate_release_notes: true
           body: |
-            ## 📱 10Min Rescue — Driver / Hospital APK
+            ## 📱 Suraksha Kavach — Driver / Hospital APK
 
             **Most phones:** download `app-arm64-v8a-release.apk` (smaller).
             **Older 32-bit phones:** download `app-armeabi-v7a-release.apk`.

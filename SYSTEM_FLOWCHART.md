@@ -1,4 +1,4 @@
-# 10 MIN RESCUE — COMPLETE SYSTEM FLOWCHART
+# SURAKSHA KAVACH — COMPLETE SYSTEM FLOWCHART
 **Last Updated:** 2026-05-10
 **Version:** 2.0 (Post-Upgrade)
 
@@ -8,7 +8,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                      10 MIN RESCUE PLATFORM                          │
+│                      SURAKSHA KAVACH PLATFORM                          │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐         │
@@ -254,7 +254,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │  📲 WHATSAPP BUSINESS APP — AUTO AWAY MESSAGE                        │
 │                                                                      │
-│  "Thank you for contacting 10 Min Rescue! 🚨                        │
+│  "Thank you for contacting Suraksha Kavach! 🚨                        │
 │   For IMMEDIATE ambulance help, share your location:                 │
 │   👉 min-rescue.web.app/sos                                          │
 │                                                                      │
@@ -1268,4 +1268,4 @@ match /admins/{uid} {
 ---
 
 **End of Flowchart Document.**
-This represents 100% of the user journeys and system flows in the 10 Min Rescue platform.
+This represents 100% of the user journeys and system flows in the Suraksha Kavach platform.

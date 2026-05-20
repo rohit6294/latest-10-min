@@ -1,4 +1,4 @@
-# 10 Min Rescue — Work Session Log
+# Suraksha Kavach — Work Session Log
 
 > Living handoff document. Open this first when resuming work in any session.
 > Last updated: 2026-05-20
@@ -66,7 +66,7 @@ Request lifecycle (collection `rescue_requests`):
 - `ten_min_rescue/firestore.rules` — hospital's `update` allowlist extended with `hospitalAckAt` / `hospitalAckBy`.
 
 **Fleet / NGO admin dashboard** *(new)*
-- Collection `ambulance_fleets/{fleetUid}` — `{ name, contactPerson, phone, email, address, joinCode, joinCodeUpdatedAt, isActive, ownerUid, createdAt }`. Created by the 10MinRescue admin team (no public signup).
+- Collection `ambulance_fleets/{fleetUid}` — `{ name, contactPerson, phone, email, address, joinCode, joinCodeUpdatedAt, isActive, ownerUid, createdAt }`. Created by the Suraksha Kavach admin team (no public signup).
 - Driver doc `fleetId` (+ denormalised `fleetName`, `fleetLinkedAt`) — already in `DriverModel`; index already in `firestore.indexes.json`.
 - `src/pages/FleetLogin.jsx` *(new)* — `/fleet` email+password sign-in; verifies an `ambulance_fleets/{uid}` doc exists.
 - `src/pages/FleetDashboard.jsx` *(new)* — `/fleet/dashboard`. Live driver list (online/offline/verified badges), live trips for those drivers (10-IN-chunk-merging Firestore listener), 5-card stats (drivers / online / verified / active trips / done today), 3 tabs (Drivers, Live Trips, Settings). Link a driver by phone (fleet rules let the fleet rewrite `fleetId`/`fleetName`/`fleetLinkedAt` only when the driver is unaffiliated or theirs). Settings tab generates / rotates a 6-char join code (alphabet excludes 0/O, 1/I).

@@ -80,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(width: 12),
                       const Text(
-                        '10Min Rescue',
+                        'Suraksha Kavach',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 20,

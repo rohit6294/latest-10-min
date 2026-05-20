@@ -1,4 +1,4 @@
-// WhatsApp Cloud API Webhook — 10 Min Rescue
+// WhatsApp Cloud API Webhook — Suraksha Kavach
 // Deployed on Vercel (free tier)
 
 const VERIFY_TOKEN   = process.env.VERIFY_TOKEN   || 'tenminrescue2024'
@@ -92,7 +92,7 @@ async function handleMessage(msg, contactName) {
     // ── Normal greeting / any other text ───────────────────────────────────
     await sendText(
       from,
-      `🙏 *Welcome to 10 Min Rescue!*\n\nHi ${name}! We provide rapid ambulance and emergency services.\n\nTo help you faster, please share your current location 👇`
+      `🙏 *Welcome to Suraksha Kavach!*\n\nHi ${name}! We provide rapid ambulance and emergency services.\n\nTo help you faster, please share your current location 👇`
     )
     await sendLocationRequest(from)
     return
@@ -101,7 +101,7 @@ async function handleMessage(msg, contactName) {
   // ── Other message types (image, audio, etc.) ───────────────────────────────
   await sendText(
     from,
-    `🙏 Hi ${name}! We are 10 Min Rescue — rapid ambulance services.\n\nPlease type your concern or share your location and we'll respond immediately.\n\n📞 Helpline: +91 7866067136`
+    `🙏 Hi ${name}! We are Suraksha Kavach — rapid ambulance services.\n\nPlease type your concern or share your location and we'll respond immediately.\n\n📞 Helpline: +91 7866067136`
   )
 }
 

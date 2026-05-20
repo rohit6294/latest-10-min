@@ -68,7 +68,7 @@ export default function Demo() {
             See It In Action
           </span>
           <h2 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-navy mb-4">
-            How 10Min Rescue Works
+            How Suraksha Kavach Works
           </h2>
           <p className="text-base sm:text-lg text-gray-500 max-w-2xl mx-auto">
             Watch the actual flow — or try it yourself.
@@ -229,7 +229,7 @@ function Step1Screen() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
         </div>
-        <span className="text-white text-xs font-bold">10MinRescue</span>
+        <span className="text-white text-xs font-bold">Suraksha Kavach</span>
       </div>
       <div className="flex-1 flex flex-col items-center justify-center text-center">
         <div className="w-16 h-16 bg-brand-red rounded-full flex items-center justify-center mb-3 shadow-lg shadow-brand-red/40 relative">

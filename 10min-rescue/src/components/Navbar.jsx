@@ -35,7 +35,7 @@ export default function Navbar() {
               </svg>
             </div>
             <span className={`text-lg sm:text-xl font-extrabold transition-colors ${scrolled ? 'text-navy' : 'text-white'}`}>
-              10Min<span className="text-brand-red">Rescue</span>
+              Suraksha <span className="text-brand-red">Kavach</span>
             </span>
           </a>
 

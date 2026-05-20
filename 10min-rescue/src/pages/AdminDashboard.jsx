@@ -307,7 +307,7 @@ export default function AdminDashboard() {
               </svg>
             </div>
             <div className="hidden sm:block">
-              <span className="text-white font-bold text-lg">10Min<span className="text-brand-red">Rescue</span></span>
+              <span className="text-white font-bold text-lg">Suraksha <span className="text-brand-red">Kavach</span></span>
               <span className="text-white/40 mx-2">|</span>
               <span className="text-white/70 text-sm font-medium">Admin Panel</span>
             </div>

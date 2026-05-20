@@ -232,7 +232,7 @@ export default function FleetDashboard() {
           <p className="text-3xl mb-3">🚧</p>
           <h1 className="font-bold text-navy mb-2">Fleet profile missing</h1>
           <p className="text-sm text-gray-500 mb-4">
-            Your account is signed in but no fleet profile is set up. Ask the 10MinRescue admin
+            Your account is signed in but no fleet profile is set up. Ask the Suraksha Kavach admin
             team to create your <code>ambulance_fleets/&lt;uid&gt;</code> document.
           </p>
           <button onClick={handleSignOut} className="text-sm font-semibold text-brand-red hover:underline">
@@ -255,7 +255,7 @@ export default function FleetDashboard() {
               </svg>
             </div>
             <div>
-              <span className="text-white font-bold text-base hidden sm:inline">10Min<span className="text-brand-red">Rescue</span></span>
+              <span className="text-white font-bold text-base hidden sm:inline">Suraksha <span className="text-brand-red">Kavach</span></span>
               <span className="text-white/40 mx-2 hidden sm:inline">|</span>
               <span className="text-white/70 text-sm font-medium">{fleet.name || 'Fleet'}</span>
             </div>
@@ -512,7 +512,7 @@ function SettingsTab({ fleet, onRegen, codeBusy }) {
           <Row label="Address" value={fleet.address || '—'} />
         </div>
         <p className="text-[11px] text-gray-400 mt-2">
-          To update profile details, contact the 10MinRescue admin team.
+          To update profile details, contact the Suraksha Kavach admin team.
         </p>
       </div>
 

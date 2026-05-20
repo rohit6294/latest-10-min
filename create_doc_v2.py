@@ -7,7 +7,7 @@ from docx.oxml import OxmlElement
 import os
 
 SS  = r'C:\Users\rohit\Desktop\10  min\screenshots'
-OUT = r'C:\Users\rohit\Desktop\10  min\10MinRescue_Product_Document_v2.docx'
+OUT = r'C:\Users\rohit\Desktop\10  min\Suraksha Kavach_Product_Document_v2.docx'
 
 RED   = RGBColor(0xC0, 0x00, 0x00)
 DARK  = RGBColor(0x1A, 0x1A, 0x2E)
@@ -139,7 +139,7 @@ def step_block(code, num, title, desc):
 # ══════════════════════════════════════════════════════════════════════════════
 for _ in range(3): doc.add_paragraph()
 p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
-r=p.add_run('10MinRescue'); r.bold=True; r.font.size=Pt(44); r.font.color.rgb=RED
+r=p.add_run('Suraksha Kavach'); r.bold=True; r.font.size=Pt(44); r.font.color.rgb=RED
 
 p2=doc.add_paragraph(); p2.alignment=WD_ALIGN_PARAGRAPH.CENTER
 r2=p2.add_run('Emergency Ambulance Dispatch Platform'); r2.font.size=Pt(18); r2.font.color.rgb=NAVY
@@ -173,7 +173,7 @@ doc.add_page_break()
 #  01 EXECUTIVE SUMMARY
 # ══════════════════════════════════════════════════════════════════════════════
 h1('01. Executive Summary'); divider()
-para('10MinRescue is a technology-powered emergency ambulance coordination platform '
+para('Suraksha Kavach is a technology-powered emergency ambulance coordination platform '
      'that connects people facing medical emergencies to the nearest available '
      'ambulance driver and hospital — in under 10 minutes. It works across three '
      'connected tools: a public website anyone can open on any phone, an Android '
@@ -183,7 +183,7 @@ para('This document explains everything about the platform — what it is, why i
      'how hospitals see and manage their bed availability, how the driver app '
      'guides a driver from alert to hospital — written for anyone, with no '
      'technical knowledge assumed.',size=11,sa=8)
-callout('10MinRescue is live and operational. Every screen shown in this document '
+callout('Suraksha Kavach is live and operational. Every screen shown in this document '
         'is from the actual, running product.',title='KEY STATEMENT:',bg='FFF0F0')
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -213,8 +213,8 @@ for t,d in [
     r2=p.add_run(t); r2.bold=True; r2.font.size=Pt(10); r2.font.color.rgb=DARK
     r3=p.add_run(d); r3.font.size=Pt(10); r3.font.color.rgb=GRAY
 para()
-h2('Before vs. After 10MinRescue')
-table(['Situation','Without 10MinRescue','With 10MinRescue'],[
+h2('Before vs. After Suraksha Kavach')
+table(['Situation','Without Suraksha Kavach','With Suraksha Kavach'],[
     ['Cardiac arrest at home','Family calls 5+ numbers, waits 30–60 min','Driver notified in seconds, arrives <10 min'],
     ['Hospital bed availability','Unknown until ambulance arrives at gate','Checked live before dispatch'],
     ['Driver navigation','Guided by panicked family on phone','Automatic GPS route to patient'],
@@ -228,7 +228,7 @@ table(['Situation','Without 10MinRescue','With 10MinRescue'],[
 h1('03. Purpose'); divider()
 callout('Ensure that no one dies waiting for an ambulance because the system '
         'failed to connect them to help in time.',title='OUR PURPOSE:',bg='FFF0F0')
-para('10MinRescue fills the gap between the moment an emergency happens and '
+para('Suraksha Kavach fills the gap between the moment an emergency happens and '
      'the moment professional help arrives. Every feature in the app — from '
      'the SOS button to the live map to the hospital bed panel — exists to '
      'make that gap as small as possible.',size=11,sa=8)
@@ -255,8 +255,8 @@ for t,d in [
 # ══════════════════════════════════════════════════════════════════════════════
 #  05 WHAT IS IT & WHY
 # ══════════════════════════════════════════════════════════════════════════════
-h1('05. What Is 10MinRescue?'); divider()
-para('10MinRescue is three connected tools that work as one system:',size=11,sa=6)
+h1('05. What Is Suraksha Kavach?'); divider()
+para('Suraksha Kavach is three connected tools that work as one system:',size=11,sa=6)
 for title,desc in [
     ('The Public Website (10minrescue.com)',
      'Open on any phone or computer — no app download needed. Anyone can press '
@@ -279,7 +279,7 @@ for title,desc in [
 #  06 AMBULANCE TYPES & SEATING
 # ══════════════════════════════════════════════════════════════════════════════
 h1('06. Ambulance Types — Equipment & Seating Layout'); divider()
-para('10MinRescue matches each emergency to the right type of ambulance. '
+para('Suraksha Kavach matches each emergency to the right type of ambulance. '
      'There are three ambulance types, each designed for a different level '
      'of medical need. When a patient selects their urgency level (Critical, '
      'Serious, or Stable), the system automatically recommends the correct '
@@ -389,7 +389,7 @@ callout('The patient or their family can override the auto-selected type on the 
 # ══════════════════════════════════════════════════════════════════════════════
 #  07 HOW IT SOLVES THE PROBLEM
 # ══════════════════════════════════════════════════════════════════════════════
-h1('07. How 10MinRescue Solves the Problem'); divider()
+h1('07. How Suraksha Kavach Solves the Problem'); divider()
 h2('The Complete Emergency Journey — Step by Step')
 para('Here is exactly what happens from the moment someone calls for help to '
      'the moment the patient is safe in hospital:',size=11,sa=10)
@@ -434,7 +434,7 @@ for s in steps: step_block(s[0],s[1],s[2],s[3])
 #  08 UI SCREENS — WEBSITE
 # ══════════════════════════════════════════════════════════════════════════════
 h1('08. Application Screens — Complete Visual Walkthrough'); divider()
-para('Every screen in the 10MinRescue platform is shown below with a plain-language '
+para('Every screen in the Suraksha Kavach platform is shown below with a plain-language '
      'explanation of what it does and who uses it.',size=11,sa=10)
 
 h2('8.1  The Public Website — What Patients & Families See')
@@ -444,11 +444,11 @@ para('The first page anyone sees at 10minrescue.com. Two large buttons dominate 
      '"Request Callback" (for when someone needs us to call them). The page '
      'also explains how the service works and builds trust.',size=10,sa=6,color=GRAY)
 img(os.path.join(SS,'01_landing_hero_desktop.png'),
-    'Figure 1: 10MinRescue Home Page — Emergency SOS and Request Callback are immediately visible',
+    'Figure 1: Suraksha Kavach Home Page — Emergency SOS and Request Callback are immediately visible',
     width=Inches(5.8))
 
 h3('"How It Works" Section')
-para('Scrolling down the home page shows the three ways to reach 10MinRescue: '
+para('Scrolling down the home page shows the three ways to reach Suraksha Kavach: '
      'the SOS button on the website, a callback request, or WhatsApp/phone call. '
      'Every channel connects to the same dispatch system.',size=10,sa=6,color=GRAY)
 img(os.path.join(SS,'06_how_it_works.png'),
@@ -519,7 +519,7 @@ img(os.path.join(SS,'08_callback.png'),
 #  09 DRIVER APP SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
 h1('09. Driver App — Every Screen Explained'); divider()
-para('The 10MinRescue Driver App runs on Android smartphones. It is designed '
+para('The Suraksha Kavach Driver App runs on Android smartphones. It is designed '
      'for use in a moving vehicle — large buttons, colour-coded urgency, minimal '
      'reading required. Below is every screen a driver interacts with during '
      'a normal shift.',size=11,sa=10)
@@ -622,7 +622,7 @@ para('When the driver confirms arrival, the hospital dashboard immediately shows
      size=10,sa=6,color=GRAY)
 
 h2('9.5  Driver Registration & Document Upload')
-para('New drivers who want to join the 10MinRescue network register through the '
+para('New drivers who want to join the Suraksha Kavach network register through the '
      'app. The registration screen collects:',size=10,sa=6,color=DARK)
 for item in ['Full name and phone number',
              'Ambulance type (A, B, or C) they operate',
@@ -707,7 +707,7 @@ para('Every partner hospital gets a secure login to the Hospital Portal. '
      'No app download required.',size=11,sa=10)
 
 h2('11.1  Hospital Login Screen')
-para('Hospitals log in with an email and password issued by the 10MinRescue '
+para('Hospitals log in with an email and password issued by the Suraksha Kavach '
      'admin team. The login page is separate from the patient website, '
      'accessible only at /hospital.',size=10,sa=6,color=GRAY)
 img(os.path.join(SS,'03_hospital_login_desktop.png'),
@@ -799,7 +799,7 @@ callout('Hospitals do NOT need to accept or reject ambulances. They are automati
 #  12 ADMIN PANEL
 # ══════════════════════════════════════════════════════════════════════════════
 h1('12. Admin Panel — Operations Control Centre'); divider()
-para('The Admin Panel is restricted to 10MinRescue\'s own operations team. '
+para('The Admin Panel is restricted to Suraksha Kavach\'s own operations team. '
      'It gives full visibility and control over the entire platform.',
      size=11,sa=8)
 img(os.path.join(SS,'05_admin_login.png'),
@@ -818,7 +818,7 @@ for item in ['Review and approve/reject driver registrations and uploaded docume
 # ══════════════════════════════════════════════════════════════════════════════
 h1('13. Edge Cases — What Happens When Things Go Wrong?'); divider()
 para('A life-saving platform must handle every failure. Here is how '
-     '10MinRescue responds to each one:',size=11,sa=10)
+     'Suraksha Kavach responds to each one:',size=11,sa=10)
 edge_cases=[
     ('No driver available nearby',
      'Search automatically expands every 30 seconds: 1 km → 2 km → 5 km → 10 km. '
@@ -867,7 +867,7 @@ for title,desc in edge_cases:
 # ══════════════════════════════════════════════════════════════════════════════
 #  14 SCOPE / OUT OF SCOPE
 # ══════════════════════════════════════════════════════════════════════════════
-h1('14. Scope — What 10MinRescue Covers'); divider()
+h1('14. Scope — What Suraksha Kavach Covers'); divider()
 for item in [
     'Emergency SOS via web browser (mobile and desktop)',
     'Automatic nearby driver search with GPS-based geolocation',
@@ -940,7 +940,7 @@ table(['Metric','Target'],[
 #  17 CLOSING
 # ══════════════════════════════════════════════════════════════════════════════
 h1('17. Final Note'); divider()
-para('10MinRescue is built on one belief: in a medical emergency, every minute '
+para('Suraksha Kavach is built on one belief: in a medical emergency, every minute '
      'without help is a minute too long. The platform exists to make those '
      'minutes disappear.',size=11,sa=8)
 para('This document has covered everything — what the platform is, why it was '
@@ -951,7 +951,7 @@ para('This document has covered everything — what the platform is, why it was 
 callout('Email: mcteam.myewards@gmail.com  |  Phone: +91 78660 67136  |  '
         'Website: 10minrescue.com',title='CONTACT:',bg='F0F4FF')
 doc.add_paragraph()
-para('10MinRescue — Product Brief v2.0 — May 2026',size=8,color=GRAY,
+para('Suraksha Kavach — Product Brief v2.0 — May 2026',size=8,color=GRAY,
      align=WD_ALIGN_PARAGRAPH.CENTER)
 
 doc.save(OUT)

@@ -33,7 +33,7 @@ class RoleSelectionScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               const Text(
-                '10Min Rescue',
+                'Suraksha Kavach',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>10Min Rescue</string>
+	<string>Suraksha Kavach</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -46,11 +46,11 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
-	<!-- ─── 10Min Rescue permissions ──────────────────────────────────── -->
+	<!-- ─── Suraksha Kavach permissions ──────────────────────────────── -->
 
 	<!-- Drivers and patients both need live location to match nearby ambulances. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>10Min Rescue needs your location to dispatch the nearest ambulance and to navigate drivers to patients and hospitals.</string>
+	<string>Suraksha Kavach needs your location to dispatch the nearest ambulance and to navigate drivers to patients and hospitals.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Drivers need background location to keep streaming the ambulance's position to the patient and hospital while a trip is active.</string>
 	<key>NSLocationAlwaysUsageDescription</key>

@@ -13,7 +13,7 @@ export default function Footer() {
                 </svg>
               </div>
               <span className="text-xl font-bold">
-                10Min<span className="text-brand-red">Rescue</span>
+                Suraksha <span className="text-brand-red">Kavach</span>
               </span>
             </div>
             <p className="text-white/50 text-sm leading-relaxed mb-6">
@@ -99,7 +99,7 @@ export default function Footer() {
         {/* Bottom Bar */}
         <div className="border-t border-white/10 py-6 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-white/40 text-sm">
-            &copy; {new Date().getFullYear()} 10Min Rescue. All rights reserved.
+            &copy; {new Date().getFullYear()} Suraksha Kavach. All rights reserved.
           </p>
           <p className="text-white/30 text-xs">
             Emergency ambulance coordination service

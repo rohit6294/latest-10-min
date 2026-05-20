@@ -170,9 +170,9 @@ export default function HospitalDashboard() {
   // Surface the incoming count in the browser tab title.
   useEffect(() => {
     document.title = incomingCount > 0
-      ? `(${incomingCount}) Ambulance incoming — 10MinRescue`
-      : '10MinRescue Hospital'
-    return () => { document.title = '10MinRescue' }
+      ? `(${incomingCount}) Ambulance incoming — Suraksha Kavach`
+      : 'Suraksha Kavach Hospital'
+    return () => { document.title = 'Suraksha Kavach' }
   }, [incomingCount])
 
   // Request browser notification permission once on first user interaction.
@@ -216,7 +216,7 @@ export default function HospitalDashboard() {
               </svg>
             </div>
             <div>
-              <span className="font-bold text-navy text-sm">10Min<span className="text-brand-red">Rescue</span></span>
+              <span className="font-bold text-navy text-sm">Suraksha <span className="text-brand-red">Kavach</span></span>
               <p className="text-xs text-gray-400">{hospitalName}</p>
             </div>
           </div>

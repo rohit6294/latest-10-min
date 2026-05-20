@@ -64,7 +64,7 @@ service cloud.firestore {
     }
 
     // ── ambulance_fleets/{fleetUid} ───────────────────────────────────────────
-    // NGO / fleet owner profile. Created by the 10MinRescue admin team.
+    // NGO / fleet owner profile. Created by the Suraksha Kavach admin team.
     match /ambulance_fleets/{fleetUid} {
       allow read: if isSignedIn() && isOwner(fleetUid);
       // Fleet owner can rotate their own join code + own contact fields, but

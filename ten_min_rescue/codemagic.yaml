@@ -1,6 +1,6 @@
 workflows:
   ios-driver-app:
-    name: 10MinRescue iOS (Driver App)
+    name: Suraksha Kavach iOS (Driver App)
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
@@ -91,4 +91,4 @@ workflows:
         auth: integration
         submit_to_testflight: true
         beta_groups:
-          - 10MinRescue Internal
+          - Suraksha Kavach Internal

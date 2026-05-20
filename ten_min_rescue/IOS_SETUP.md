@@ -1,4 +1,4 @@
-# iOS Setup — 10Min Rescue Driver App
+# iOS Setup — Suraksha Kavach Driver App
 
 The repository does not commit the generated `ios/` folder. Instead, the iOS
 build is regenerated on every Codemagic CI run by `flutter create
@@ -68,7 +68,7 @@ picks it up automatically.
 5. Fetch signing files from App Store Connect, install the certificate, and
    provision the build.
 6. `flutter build ipa --release` with an auto-incremented build number.
-7. Upload to TestFlight, beta-group "10MinRescue Internal".
+7. Upload to TestFlight, beta-group "Suraksha Kavach Internal".
 
 ---
 

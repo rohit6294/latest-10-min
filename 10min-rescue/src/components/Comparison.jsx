@@ -66,7 +66,7 @@ export default function Comparison() {
             Why Choose Us
           </h2>
           <p className="text-lg text-gray-500 max-w-2xl mx-auto">
-            See how 10Min Rescue compares to traditional ambulance services.
+            See how Suraksha Kavach compares to traditional ambulance services.
           </p>
         </div>
 
@@ -77,7 +77,7 @@ export default function Comparison() {
           <div className="grid grid-cols-3 bg-navy text-white">
             <div className="p-2.5 sm:p-6 font-bold text-xs sm:text-base">Feature</div>
             <div className="p-2.5 sm:p-6 font-bold text-xs sm:text-base text-center border-l border-white/10">Traditional</div>
-            <div className="p-2.5 sm:p-6 font-bold text-xs sm:text-base text-center border-l border-white/10 bg-emergency">10Min Rescue</div>
+            <div className="p-2.5 sm:p-6 font-bold text-xs sm:text-base text-center border-l border-white/10 bg-emergency">Suraksha Kavach</div>
           </div>
 
           {/* Rows */}
@@ -102,7 +102,7 @@ export default function Comparison() {
                 </div>
               </div>
 
-              {/* 10Min Rescue */}
+              {/* Suraksha Kavach */}
               <div className="p-2.5 sm:p-6 flex items-center justify-center border-l border-gray-100 bg-emerald-50/50">
                 <div className="flex items-center gap-1 sm:gap-2">
                   <svg className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

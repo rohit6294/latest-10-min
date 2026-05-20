@@ -325,7 +325,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '10MinRescue',
+                    'Suraksha Kavach',
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontSize: 18,

@@ -59,7 +59,7 @@ export default function FleetLogin() {
               </svg>
             </div>
             <span className="text-2xl font-bold text-white">
-              10Min<span className="text-emergency">Rescue</span>
+              Suraksha <span className="text-emergency">Kavach</span>
             </span>
           </div>
           <h1 className="text-2xl font-bold text-white">Fleet / NGO Portal</h1>
@@ -119,7 +119,7 @@ export default function FleetLogin() {
           </form>
 
           <p className="text-center text-xs text-gray-400 mt-6">
-            Fleet / NGO admins only · Contact 10MinRescue to onboard
+            Fleet / NGO admins only · Contact Suraksha Kavach to onboard
           </p>
         </div>
       </div>

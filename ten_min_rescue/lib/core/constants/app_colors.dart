@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 10Min Rescue brand colors
+/// Suraksha Kavach brand colors
 class AppColors {
   AppColors._();
 

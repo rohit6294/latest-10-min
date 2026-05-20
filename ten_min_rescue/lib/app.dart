@@ -5,7 +5,7 @@ import 'core/constants/app_colors.dart';
 import 'core/router/app_router.dart';
 import 'core/services/notification_service.dart';
 
-/// 10Min Rescue — Emergency Ambulance Service
+/// Suraksha Kavach — Emergency Ambulance Service
 class TenMinRescueApp extends ConsumerStatefulWidget {
   const TenMinRescueApp({super.key});
 
@@ -32,7 +32,7 @@ class _TenMinRescueAppState extends ConsumerState<TenMinRescueApp> {
     final baseTextTheme = GoogleFonts.poppinsTextTheme();
 
     return MaterialApp.router(
-      title: '10Min Rescue',
+      title: 'Suraksha Kavach',
       debugShowCheckedModeBanner: false,
       routerConfig: AppRouter.router,
       theme: ThemeData(

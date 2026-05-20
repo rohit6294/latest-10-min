@@ -94,7 +94,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 const SizedBox(height: 8),
                 Text(
-                  'Join 10Min Rescue as a driver',
+                  'Join Suraksha Kavach as a driver',
                   style: GoogleFonts.poppins(
                     color: AppColors.textSecondary,
                     fontSize: 14,

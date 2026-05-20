@@ -1,7 +1,7 @@
 {
   "name": "tenminrescue-whatsapp-webhook",
   "version": "1.0.0",
-  "description": "WhatsApp Cloud API webhook for 10 Min Rescue — auto location request",
+  "description": "WhatsApp Cloud API webhook for Suraksha Kavach — auto location request",
   "private": true,
   "engines": {
     "node": ">=18"

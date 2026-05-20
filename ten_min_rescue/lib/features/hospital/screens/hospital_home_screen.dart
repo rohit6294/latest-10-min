@@ -198,7 +198,7 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '10Min Rescue · Hospital',
+                  'Suraksha Kavach · Hospital',
                   style: GoogleFonts.poppins(
                     color: AppColors.textSecondary,
                     fontSize: 11.5,

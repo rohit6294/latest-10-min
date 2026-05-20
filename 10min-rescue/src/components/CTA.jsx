@@ -61,7 +61,7 @@ export default function CTA() {
           </div>
 
           <p className="text-white/40 text-sm mt-6 px-2 sm:px-0">
-            <span className="text-brand-red font-bold">10Min Rescue</span> · Verified ambulances · 24/7 dispatch
+            <span className="text-brand-red font-bold">Suraksha Kavach</span> · Verified ambulances · 24/7 dispatch
           </p>
         </div>
       </div>
