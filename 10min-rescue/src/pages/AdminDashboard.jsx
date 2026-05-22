@@ -10,8 +10,8 @@ import {
   serverTimestamp,
   addDoc,
 } from 'firebase/firestore'
-import { getFunctions, httpsCallable } from 'firebase/functions'
 import { auth, db } from '../firebase'
+import { callBackend } from '../backend'
 import AdminStatsBar from '../components/admin/AdminStatsBar'
 import DriverVerificationCard from '../components/admin/DriverVerificationCard'
 import DriverDocModal from '../components/admin/DriverDocModal'
@@ -1171,8 +1171,7 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
     setSaving(true)
     setResult(null)
     try {
-      const functions = getFunctions(undefined, 'asia-south1')
-      const createAccount = httpsCallable(functions, 'adminCreateAccount')
+      const idToken = await auth.currentUser?.getIdToken()
       const payload = {
         accountType, email, password, displayName, phone,
         ...(accountType === 'hospital' && {
@@ -1185,8 +1184,8 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
         ...(accountType === 'fleet' && { contactPerson: contactPerson || displayName, address }),
         ...(accountType === 'driver' && { vehicleNumber, vehicleType }),
       }
-      const res = await createAccount(payload)
-      setResult({ success: true, message: res.data.message })
+      const res = await callBackend('/admin/create-account', { body: payload, idToken })
+      setResult({ success: true, message: res.message })
       resetForm()
     } catch (err) {
       setResult({ error: err.message || 'Failed to create account.' })

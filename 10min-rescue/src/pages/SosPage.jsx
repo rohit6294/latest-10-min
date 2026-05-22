@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { collection, doc, setDoc, serverTimestamp, getDocs, query, where, GeoPoint } from 'firebase/firestore'
 import { db } from '../firebase'
+import { callBackend } from '../backend'
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -178,6 +179,13 @@ export default function SosPage() {
         localStorage.setItem('lastSosId', ref.id)
         localStorage.setItem('lastSosCreatedAt', String(Date.now()))
       } catch (_) {}
+      // Kick off driver matching on Render backend (replaces the Firestore
+      // trigger that's unavailable on the free Firebase Spark plan).
+      // Fire-and-forget: the driver app also listens to Firestore directly,
+      // so a slow/failed backend call doesn't block the patient flow.
+      callBackend('/rescue/match-driver', { body: { requestId: ref.id } }).catch((e) =>
+        console.warn('match-driver backend call failed (non-fatal):', e)
+      )
       // Redirect to live tracking page.
       window.location.href = `/track/${ref.id}`
     } catch (e) {

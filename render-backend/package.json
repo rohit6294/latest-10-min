@@ -1,0 +1,19 @@
+{
+  "name": "min-rescue-backend",
+  "version": "1.0.0",
+  "description": "Express backend for 10 Min Rescue — replaces Firebase Cloud Functions on free tier",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0",
+    "geofire-common": "^6.0.0"
+  }
+}
