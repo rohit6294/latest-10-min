@@ -8,6 +8,7 @@ import '../../../core/services/firestore_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/fcm_service.dart';
 import '../../../core/models/driver_model.dart';
+import 'equipment_checklist_screen.dart';
 import '../../../core/models/rescue_request_model.dart';
 import '../../../core/models/sos_request_model.dart';
 import '../../../core/models/ambulance_type.dart';
@@ -89,7 +90,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
-  Future<void> _toggleOnline(bool currentlyOnline) async {
+  Future<void> _toggleOnline(bool currentlyOnline, DriverModel driver) async {
     if (!currentlyOnline) {
       final granted = await _locationService.requestPermissions();
       if (!granted && mounted) {
@@ -100,6 +101,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           ),
         );
         return;
+      }
+
+      // Force a pre-shift equipment check the first time today (or any time
+      // it's been more than DriverModel.equipmentCheckFreshness). Drivers
+      // CANNOT go online without confirming oxygen, defib, etc.
+      if (!driver.hasFreshEquipmentCheck) {
+        final ok = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => const EquipmentChecklistScreen(),
+            fullscreenDialog: true,
+          ),
+        );
+        if (ok != true) return; // Driver bailed out — stay offline.
       }
     }
     setState(() => _loading = true);
@@ -504,7 +518,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           SizedBox(
             width: double.infinity,
             child: GestureDetector(
-              onTap: () => _toggleOnline(isOnline),
+              onTap: () => _toggleOnline(isOnline, driver),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
@@ -548,30 +562,73 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   }
 
   Widget _buildStatsRow(DriverModel driver) {
-    return Row(
+    final ratingDisplay = driver.totalRatings > 0
+        ? driver.rating.toStringAsFixed(1)
+        : '—';
+    return Column(
       children: [
-        Expanded(
-          child: _statCard(
-            icon: Icons.directions_car_rounded,
-            label: 'Vehicle',
-            value: driver.vehicleNumber.isEmpty
-                ? 'Not Set'
-                : driver.vehicleNumber,
-            color: AppColors.accentBlue,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _statCard(
+                icon: Icons.star_rounded,
+                label: 'Rating',
+                value: ratingDisplay,
+                color: AppColors.warningAmber,
+                trailing: driver.totalRatings > 0
+                    ? '${driver.totalRatings} reviews'
+                    : 'No reviews yet',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _statCard(
+                icon: Icons.flag_rounded,
+                label: 'Rides',
+                value: '${driver.completedRides}',
+                color: AppColors.onlineGreen,
+                trailing: 'completed',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _statCard(
+                icon: Icons.local_fire_department_rounded,
+                label: 'Points',
+                value: '${driver.points}',
+                color: AppColors.brandRed,
+                trailing: 'tier',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _statCard(
-            icon: Icons.verified_rounded,
-            label: 'Status',
-            value: driver.verificationStatus == 'verified'
-                ? 'Verified'
-                : 'Pending',
-            color: driver.verificationStatus == 'verified'
-                ? AppColors.onlineGreen
-                : AppColors.warningAmber,
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _statCard(
+                icon: Icons.directions_car_rounded,
+                label: 'Vehicle',
+                value: driver.vehicleNumber.isEmpty
+                    ? 'Not Set'
+                    : driver.vehicleNumber,
+                color: AppColors.accentBlue,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _statCard(
+                icon: Icons.verified_rounded,
+                label: 'Status',
+                value: driver.verificationStatus == 'verified'
+                    ? 'Verified'
+                    : 'Pending',
+                color: driver.verificationStatus == 'verified'
+                    ? AppColors.onlineGreen
+                    : AppColors.warningAmber,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -582,9 +639,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     required String label,
     required String value,
     required Color color,
+    String? trailing,
   }) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -594,20 +652,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(icon, color: color, size: 16),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             label,
             style: GoogleFonts.poppins(
               color: AppColors.textSecondary,
-              fontSize: 11,
+              fontSize: 10.5,
             ),
           ),
           const SizedBox(height: 2),
@@ -621,6 +679,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
+          if (trailing != null) ...[
+            const SizedBox(height: 1),
+            Text(
+              trailing,
+              style: GoogleFonts.poppins(
+                color: AppColors.textLight,
+                fontSize: 9.5,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
       ),
     );

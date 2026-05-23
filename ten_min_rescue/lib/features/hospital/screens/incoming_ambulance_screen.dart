@@ -1,6 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/firestore_service.dart';
 import '../../../core/models/rescue_request_model.dart';
 import '../../../core/models/ambulance_type.dart';
@@ -124,49 +126,72 @@ class _IncomingAmbulanceScreenState extends State<IncomingAmbulanceScreen>
                       ),
                     ),
                     const Spacer(),
-                    // Patient info
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.2)),
-                      ),
-                      child: Column(
-                        children: [
-                          _infoRow(Icons.person_outline, 'Patient',
-                              request.patientName),
-                          _divider(),
-                          _infoRow(Icons.phone_outlined, 'Phone',
-                              request.patientPhone),
-                          _divider(),
-                          _infoRow(
-                            Icons.warning_rounded,
-                            'Urgency',
-                            request.urgencyLevel.label,
-                          ),
-                          if (request.emergencyDescription.isNotEmpty) ...[
-                            _divider(),
-                            _infoRow(
-                              Icons.info_outline,
-                              'Details',
-                              request.emergencyDescription,
-                              maxLines: 3,
+                    // Scrollable card so the pre-arrival handoff (patient +
+                    // driver + instructions) all fits on a small phone screen.
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            // Patient info
+                            Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.2)),
+                              ),
+                              child: Column(
+                                children: [
+                                  _infoRow(Icons.person_outline, 'Patient',
+                                      request.patientName),
+                                  _divider(),
+                                  _infoRow(Icons.phone_outlined, 'Phone',
+                                      request.patientPhone),
+                                  _divider(),
+                                  _infoRow(
+                                    Icons.warning_rounded,
+                                    'Urgency',
+                                    request.urgencyLevel.label,
+                                  ),
+                                  if (request.emergencyDescription.isNotEmpty) ...[
+                                    _divider(),
+                                    _infoRow(
+                                      Icons.info_outline,
+                                      'Details',
+                                      request.emergencyDescription,
+                                      maxLines: 3,
+                                    ),
+                                  ],
+                                  _divider(),
+                                  _infoRow(
+                                    Icons.person_pin_circle_outlined,
+                                    'Selected by',
+                                    request.hospitalChosenBy == 'patient'
+                                        ? 'Patient (via SOS)'
+                                        : 'Driver',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Driver handoff card — name, phone, vehicle
+                            if (request.assignedDriverId != null &&
+                                request.assignedDriverId!.isNotEmpty)
+                              _DriverHandoffCard(
+                                driverId: request.assignedDriverId!,
+                              ),
+                            const SizedBox(height: 12),
+                            // Patient instructions / voice notes for ER prep
+                            _HospitalInstructionsCard(
+                              requestId: widget.requestId,
                             ),
                           ],
-                          _divider(),
-                          _infoRow(
-                            Icons.person_pin_circle_outlined,
-                            'Selected by',
-                            request.hospitalChosenBy == 'patient'
-                                ? 'Patient (via SOS)'
-                                : 'Driver',
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     // Action buttons
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -263,4 +288,251 @@ class _IncomingAmbulanceScreenState extends State<IncomingAmbulanceScreen>
         margin: const EdgeInsets.symmetric(vertical: 10),
         color: Colors.white.withValues(alpha: 0.15),
       );
+}
+
+/// Hospital-side handoff card: shows incoming driver name, phone, vehicle and
+/// a tap-to-call button so the ER charge nurse can reach the crew directly
+/// before arrival.
+class _DriverHandoffCard extends StatelessWidget {
+  final String driverId;
+  const _DriverHandoffCard({required this.driverId});
+
+  Future<void> _call(BuildContext context, String phone) async {
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(driverId)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || !snap.data!.exists) {
+          return const SizedBox.shrink();
+        }
+        final data = (snap.data!.data() as Map<String, dynamic>?) ?? {};
+        final name = (data['name'] as String?)?.trim();
+        final phone = (data['phone'] as String?)?.trim();
+        final vehicle = (data['vehicleNumber'] as String?)?.trim();
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'INBOUND DRIVER',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white70,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      name?.isNotEmpty == true ? name! : 'Driver',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (vehicle != null && vehicle.isNotEmpty)
+                      Text(
+                        vehicle,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white70,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (phone != null && phone.isNotEmpty)
+                Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _call(context, phone),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      child: const Icon(
+                        Icons.phone_rounded,
+                        color: AppColors.brandRed,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Hospital-side display of the patient instruction feed (text + voice).
+/// Critical for ER prep — eg "patient is diabetic" / "stroke onset 7:42".
+class _HospitalInstructionsCard extends StatelessWidget {
+  final String requestId;
+  const _HospitalInstructionsCard({required this.requestId});
+
+  Future<void> _play(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirestoreService().watchInstructions(requestId),
+      builder: (context, snap) {
+        final items = snap.data ?? const <Map<String, dynamic>>[];
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'PATIENT NOTES (${items.length})',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ...items.map((it) {
+                final type = it['type'] as String? ?? 'text';
+                if (type == 'audio') {
+                  final url = it['audioUrl'] as String?;
+                  final dur = (it['durationSec'] as num?)?.toInt() ?? 0;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.mic_rounded,
+                            color: Colors.white, size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Voice note · ${dur}s',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (url != null && url.isNotEmpty)
+                          TextButton.icon(
+                            onPressed: () => _play(context, url),
+                            icon: const Icon(Icons.play_arrow_rounded,
+                                size: 16, color: Colors.white),
+                            label: Text(
+                              'Play',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          )
+                      ],
+                    ),
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.sticky_note_2_outlined,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          (it['text'] as String? ?? '').trim(),
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }

@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { doc, onSnapshot } from 'firebase/firestore'
+import {
+  doc,
+  onSnapshot,
+  collection,
+  query,
+  orderBy,
+} from 'firebase/firestore'
 import { db } from '../firebase'
+import { callBackend } from '../backend'
 
 // ─── Status display map ────────────────────────────────────────────────────
 
@@ -82,6 +89,11 @@ function geo(point) {
 
 // ─── Main component ────────────────────────────────────────────────────────
 
+// How long to wait before suggesting the public 108 helpline when no driver
+// has accepted yet. Picked to be just long enough that one radius-expansion
+// pass has run, but short enough that a panicked caller is not stranded.
+const FALLBACK_108_AFTER_MS = 60 * 1000
+
 export default function TrackPage() {
   const { requestId } = useParams()
   const [req, setReq] = useState(null)
@@ -89,10 +101,20 @@ export default function TrackPage() {
   const [route, setRoute] = useState([]) // array of [lat, lng]
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [nowMs, setNowMs] = useState(Date.now())
+  const [instructions, setInstructions] = useState([])
+  const [ratingSubmitted, setRatingSubmitted] = useState(false)
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const markersRef = useRef({})
   const polylineRef = useRef(null)
+
+  // Tick once a second so the "search elapsed" timer and 108 fallback banner
+  // re-render without an explicit state update from Firestore.
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
 
   // ─── Subscribe to the rescue request ─────────────────────────────────
   useEffect(() => {
@@ -114,6 +136,21 @@ export default function TrackPage() {
         setLoading(false)
       }
     )
+    return unsub
+  }, [requestId])
+
+  // ─── Subscribe to patient instructions subcollection ──────────────────
+  useEffect(() => {
+    if (!requestId) return
+    const q = query(
+      collection(db, 'rescue_requests', requestId, 'instructions'),
+      orderBy('createdAt', 'asc')
+    )
+    const unsub = onSnapshot(q, (snap) => {
+      setInstructions(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      )
+    })
     return unsub
   }, [requestId])
 
@@ -299,6 +336,18 @@ export default function TrackPage() {
   const hospitalName = req.hospitalName || req.preferredHospitalName
   const hospitalAddress = req.hospitalAddress || req.preferredHospitalAddress
 
+  // Time since the request was created — used to drive the 108 fallback banner
+  // when matching is taking too long.
+  const createdAtMs =
+    req.createdAt?.toDate?.()?.getTime?.() ??
+    (typeof req.createdAt?.seconds === 'number'
+      ? req.createdAt.seconds * 1000
+      : null)
+  const elapsedMs = createdAtMs ? nowMs - createdAtMs : 0
+  const showFallback108 =
+    req.status === 'pending_driver' && elapsedMs >= FALLBACK_108_AFTER_MS
+  const searchSeconds = Math.max(0, Math.round(elapsedMs / 1000))
+
   return (
     <div className="min-h-screen bg-light-bg text-navy pb-24">
       {/* Header */}
@@ -347,6 +396,34 @@ export default function TrackPage() {
             </div>
           )}
         </div>
+
+        {/* 108 fallback — show when no driver has accepted within FALLBACK_108_AFTER_MS */}
+        {showFallback108 && (
+          <div className="rounded-3xl border-2 border-red-500/40 bg-red-50 p-4 sm:p-5 shadow-lg shadow-red-500/10">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center text-xl shrink-0">
+                🚨
+              </div>
+              <div className="flex-1">
+                <div className="font-extrabold text-red-700 text-sm sm:text-base">
+                  Still searching after {searchSeconds}s
+                </div>
+                <div className="text-red-600/80 text-xs sm:text-sm">
+                  Don't wait — dial India's emergency line 108 right now.
+                </div>
+              </div>
+            </div>
+            <a
+              href="tel:108"
+              className="block w-full bg-red-600 hover:bg-red-700 text-white font-extrabold text-center py-4 rounded-2xl shadow-lg shadow-red-600/30 text-lg"
+            >
+              📞 CALL 108 NOW
+            </a>
+            <p className="text-[11px] text-red-700/70 text-center mt-2">
+              We'll keep trying to dispatch a 10MinRescue ambulance in parallel.
+            </p>
+          </div>
+        )}
 
         {/* Map */}
         <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
@@ -431,6 +508,32 @@ export default function TrackPage() {
           </div>
         )}
 
+        {/* Patient instructions for the driver — text + voice */}
+        {hasDriver && req.status !== 'completed' && req.status !== 'cancelled' && (
+          <InstructionsPanel
+            requestId={requestId}
+            instructions={instructions}
+          />
+        )}
+
+        {/* Rating modal trigger on completion */}
+        {req.status === 'completed' && hasDriver && !req.patientRating && !ratingSubmitted && (
+          <RatingPanel
+            requestId={requestId}
+            driverName={req.driverName}
+            onSubmitted={() => setRatingSubmitted(true)}
+          />
+        )}
+
+        {/* Show submitted rating confirmation */}
+        {req.status === 'completed' && (req.patientRating || ratingSubmitted) && (
+          <div className="bg-green-50 border border-green-200 rounded-3xl p-5 text-center">
+            <div className="text-2xl mb-1">🙏</div>
+            <div className="font-bold text-green-700 text-sm">Thanks for your feedback</div>
+            <div className="text-green-600/80 text-xs mt-1">Your rating helps us improve.</div>
+          </div>
+        )}
+
         {/* Emergency description */}
         {req.emergencyDescription && (
           <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
@@ -489,6 +592,289 @@ export default function TrackPage() {
         }
         .leaflet-control-attribution { display: none !important; }
       `}</style>
+    </div>
+  )
+}
+
+// ─── InstructionsPanel ────────────────────────────────────────────────────
+// Lets a panicked patient/family member send extra context to the driver
+// while help is on the way. Two channels: a short text note, or a voice
+// recording (browser MediaRecorder, uploaded via the backend so the patient
+// stays anonymous to Firebase Storage rules).
+
+function InstructionsPanel({ requestId, instructions }) {
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [recording, setRecording] = useState(false)
+  const [recordSeconds, setRecordSeconds] = useState(0)
+  const mediaRecorderRef = useRef(null)
+  const chunksRef = useRef([])
+  const recordTimerRef = useRef(null)
+
+  const sendText = async () => {
+    const t = text.trim()
+    if (!t || sending) return
+    setError('')
+    setSending(true)
+    try {
+      await callBackend('/rescue/instruction', {
+        body: { requestId, type: 'text', text: t },
+      })
+      setText('')
+    } catch (e) {
+      setError(e.message || 'Could not send. Try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const startRecording = async () => {
+    setError('')
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Microphone not available on this browser.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : 'audio/webm'
+      const recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 24000 })
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(chunksRef.current, { type: mime })
+        const arrayBuf = await blob.arrayBuffer()
+        const base64 = bufferToBase64(arrayBuf)
+        const dur = recordSeconds
+        try {
+          setSending(true)
+          await callBackend('/rescue/instruction', {
+            body: {
+              requestId,
+              type: 'audio',
+              audioBase64: base64,
+              mimeType: mime,
+              durationSec: dur,
+            },
+          })
+        } catch (e) {
+          setError(e.message || 'Could not upload voice note.')
+        } finally {
+          setSending(false)
+        }
+      }
+      recorder.start()
+      mediaRecorderRef.current = recorder
+      setRecording(true)
+      setRecordSeconds(0)
+      recordTimerRef.current = setInterval(() => {
+        setRecordSeconds((s) => {
+          if (s >= 30) {
+            stopRecording()
+            return s
+          }
+          return s + 1
+        })
+      }, 1000)
+    } catch (e) {
+      setError(e.message || 'Microphone permission denied.')
+    }
+  }
+
+  const stopRecording = () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current)
+    recordTimerRef.current = null
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    setRecording(false)
+  }
+
+  return (
+    <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">
+          Send extra info to driver
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Allergies, exact landmark, what just happened — anything helps the crew prepare.
+      </p>
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value.slice(0, 500))}
+        placeholder="e.g. Patient is diabetic. We're at gate 3, blue door."
+        rows={2}
+        className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-navy placeholder-gray-400 text-sm focus:outline-none focus:border-blue-500 resize-none"
+      />
+
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <button
+          onClick={sendText}
+          disabled={!text.trim() || sending}
+          className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white font-bold text-sm py-3 rounded-2xl transition-colors"
+        >
+          {sending ? 'Sending…' : 'Send text'}
+        </button>
+
+        {!recording ? (
+          <button
+            onClick={startRecording}
+            disabled={sending}
+            className="bg-rose-500 hover:bg-rose-600 disabled:bg-gray-300 text-white font-bold text-sm py-3 rounded-2xl transition-colors flex items-center justify-center gap-2"
+          >
+            🎤 Record voice
+          </button>
+        ) : (
+          <button
+            onClick={stopRecording}
+            className="bg-rose-600 text-white font-bold text-sm py-3 rounded-2xl flex items-center justify-center gap-2 animate-pulse"
+          >
+            ⏹ Stop ({recordSeconds}s)
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs">
+          {error}
+        </div>
+      )}
+
+      {instructions.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            Sent ({instructions.length})
+          </div>
+          {instructions.map((it) => (
+            <InstructionRow key={it.id} instruction={it} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InstructionRow({ instruction }) {
+  const isAudio = instruction.type === 'audio'
+  const audioSrc = instruction.audioUrl
+    ? instruction.audioUrl
+    : instruction.audioBase64
+    ? `data:${instruction.mimeType || 'audio/webm'};base64,${instruction.audioBase64}`
+    : null
+  return (
+    <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3">
+      {isAudio ? (
+        <div className="flex items-center gap-2">
+          <span className="text-base">🎤</span>
+          <span className="text-xs font-semibold text-blue-700">
+            Voice note · {instruction.durationSec || '?'}s
+          </span>
+          {audioSrc && (
+            <audio src={audioSrc} controls className="ml-auto h-8 max-w-[180px]" />
+          )}
+        </div>
+      ) : (
+        <div className="flex items-start gap-2">
+          <span className="text-base">📝</span>
+          <p className="text-sm text-navy leading-snug">{instruction.text}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function bufferToBase64(arrayBuf) {
+  const bytes = new Uint8Array(arrayBuf)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+// ─── RatingPanel ─────────────────────────────────────────────────────────
+// Captured immediately after the ride is completed. Submits via the backend
+// (which atomically updates the driver's running average + completed count).
+
+function RatingPanel({ requestId, driverName, onSubmitted }) {
+  const [stars, setStars] = useState(0)
+  const [comment, setComment] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    if (!stars || submitting) return
+    setSubmitting(true)
+    setError('')
+    try {
+      await callBackend('/rescue/rate', {
+        body: { requestId, rating: stars, comment: comment.trim() },
+      })
+      onSubmitted?.()
+    } catch (e) {
+      setError(e.message || 'Could not submit rating.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-3xl p-5 shadow-sm border-2 border-amber-200">
+      <div className="text-center mb-3">
+        <div className="text-2xl mb-1">🌟</div>
+        <div className="font-extrabold text-navy text-base">
+          How was {driverName || 'your driver'}?
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          Your feedback shapes who serves the next patient.
+        </div>
+      </div>
+
+      <div className="flex justify-center gap-2 mb-3">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            onClick={() => setStars(n)}
+            className={`text-3xl transition-transform ${
+              n <= stars ? 'scale-110' : 'opacity-30'
+            }`}
+            aria-label={`Rate ${n} stars`}
+          >
+            ⭐
+          </button>
+        ))}
+      </div>
+
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value.slice(0, 500))}
+        placeholder="Optional: a short comment for the driver"
+        rows={2}
+        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-navy placeholder-gray-400 text-sm focus:outline-none focus:border-amber-400 resize-none mb-3"
+      />
+
+      <button
+        onClick={submit}
+        disabled={!stars || submitting}
+        className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white font-bold py-3 rounded-2xl transition-colors"
+      >
+        {submitting ? 'Submitting…' : 'Submit rating'}
+      </button>
+
+      {error && (
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs">
+          {error}
+        </div>
+      )}
     </div>
   )
 }

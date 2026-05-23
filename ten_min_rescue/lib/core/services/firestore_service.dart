@@ -259,10 +259,61 @@ class FirestoreService {
 
   /// Mark a pending request as ignored/declined by this driver so it does not
   /// reopen on the same device after navigation or app restart.
-  Future<void> ignorePendingRequest(String requestId, String driverId) async {
+  ///
+  /// [reason] is a short ops-analytics code ('too_far', 'wrong_type',
+  /// 'on_break', 'vehicle_issue', 'other', ...) captured via the refusal chip
+  /// dialog so the dispatch team can see why drivers say no and where to add
+  /// capacity. Each decline is also appended to the request as a structured
+  /// log entry so admin can review per-request.
+  Future<void> ignorePendingRequest(
+    String requestId,
+    String driverId, {
+    String reason = 'unspecified',
+  }) async {
+    final declineEntry = {
+      'driverId': driverId,
+      'reason': reason,
+      'declinedAt': Timestamp.now(),
+    };
     await _db.doc(FirestorePaths.rescueRequest(requestId)).set({
       'declinedDriverIds': FieldValue.arrayUnion([driverId]),
+      'declineLog': FieldValue.arrayUnion([declineEntry]),
       'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // Per-driver aggregate so ops can scan "why is this driver declining so
+    // often / why are we losing requests in this area".
+    await _db.doc(FirestorePaths.driver(driverId)).set({
+      'lastDeclineReason': reason,
+      'lastDeclineAt': FieldValue.serverTimestamp(),
+      'declineCounts.$reason': FieldValue.increment(1),
+    }, SetOptions(merge: true));
+  }
+
+  // ─── Patient instructions subcollection ──────────────────────────────────
+
+  Stream<List<Map<String, dynamic>>> watchInstructions(String requestId) => _db
+      .collection(FirestorePaths.rescueRequests)
+      .doc(requestId)
+      .collection('instructions')
+      .orderBy('createdAt')
+      .snapshots()
+      .map((snap) => snap.docs.map((d) {
+            final data = d.data();
+            return {
+              'id': d.id,
+              ...data,
+            };
+          }).toList());
+
+  // ─── Equipment checklist ─────────────────────────────────────────────────
+
+  /// Mark a driver as having completed the pre-shift equipment check.
+  /// Cleared every 12 hours so a driver going on/off shift through a long day
+  /// still has to re-verify their kit.
+  Future<void> recordEquipmentCheck(String driverId) async {
+    await _db.doc(FirestorePaths.driver(driverId)).set({
+      'lastEquipmentCheckAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 

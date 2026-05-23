@@ -19,6 +19,17 @@ class DriverModel {
   final Map<String, String> documents; // docType → downloadUrl
   final String? fleetId; // uid of the NGO / ambulance admin this driver belongs to
 
+  // Reputation / gamification — written by the backend /rescue/rate endpoint
+  // when a patient rates a completed ride.
+  final double rating; // 0.0 – 5.0, running mean
+  final int totalRatings;
+  final int completedRides;
+
+  /// When the driver last completed the pre-shift equipment checklist.
+  /// Used to gate `Go Online` — driver can't accept new requests if this is
+  /// missing or stale.
+  final DateTime? lastEquipmentCheckAt;
+
   const DriverModel({
     required this.uid,
     required this.name,
@@ -36,7 +47,26 @@ class DriverModel {
     this.rejectionReason = '',
     this.documents = const {},
     this.fleetId,
+    this.rating = 0.0,
+    this.totalRatings = 0,
+    this.completedRides = 0,
+    this.lastEquipmentCheckAt,
   });
+
+  /// Equipment check is considered fresh for 12 hours after the driver
+  /// completes the checklist. Beyond that they must re-verify.
+  static const Duration equipmentCheckFreshness = Duration(hours: 12);
+
+  bool get hasFreshEquipmentCheck {
+    final ts = lastEquipmentCheckAt;
+    if (ts == null) return false;
+    return DateTime.now().difference(ts) < equipmentCheckFreshness;
+  }
+
+  /// Gamification points — same formula as backend: completed rides count
+  /// more than raw stars, so a 5-star driver who's done 1 ride doesn't outrank
+  /// a 4.5-star driver who's done 30.
+  int get points => completedRides * 10 + (rating * 20).round();
 
   factory DriverModel.fromFirestore(DocumentSnapshot doc) {
     final data = (doc.data() as Map<String, dynamic>?) ?? {};
@@ -60,6 +90,11 @@ class DriverModel {
               ?.map((k, v) => MapEntry(k, v.toString())) ??
           const {},
       fleetId: data['fleetId'] as String?,
+      rating: (data['rating'] as num?)?.toDouble() ?? 0.0,
+      totalRatings: (data['totalRatings'] as num?)?.toInt() ?? 0,
+      completedRides: (data['completedRides'] as num?)?.toInt() ?? 0,
+      lastEquipmentCheckAt:
+          (data['lastEquipmentCheckAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -81,6 +116,9 @@ class DriverModel {
         'rejectionReason': rejectionReason,
         'documents': documents,
         if (fleetId != null) 'fleetId': fleetId,
+        'rating': rating,
+        'totalRatings': totalRatings,
+        'completedRides': completedRides,
       };
 
   DriverModel copyWith({

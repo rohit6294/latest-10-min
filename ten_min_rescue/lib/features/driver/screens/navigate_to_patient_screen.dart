@@ -129,6 +129,23 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
     }
   }
 
+  /// Open a voice note attached to a patient instruction. Plays via the
+  /// system's default audio handler (browser / media player); avoids adding
+  /// an in-app audio dependency for v1.
+  Future<void> _playVoiceNote(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No audio player installed to open this voice note.'),
+          backgroundColor: AppColors.brandRed,
+        ),
+      );
+    }
+  }
+
   Future<void> _confirmCancel() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -472,6 +489,11 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      // Patient instructions feed (text + voice notes)
+                      _InstructionsStripe(
+                        requestId: widget.requestId,
+                        onPlayAudio: _playVoiceNote,
+                      ),
                       // ETA + Distance chips
                       Row(
                         children: [
@@ -630,6 +652,147 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Compact, real-time strip showing patient-sent instructions (text + voice).
+/// Reused by the hospital incoming-ambulance screen too so both surfaces
+/// share the same context the patient is providing while en route.
+class _InstructionsStripe extends StatelessWidget {
+  final String requestId;
+  final Future<void> Function(String url) onPlayAudio;
+
+  const _InstructionsStripe({
+    required this.requestId,
+    required this.onPlayAudio,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirestoreService().watchInstructions(requestId),
+      builder: (context, snap) {
+        final items = snap.data ?? const <Map<String, dynamic>>[];
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.accentBlue.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.accentBlue.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 14,
+                      color: AppColors.accentBlue,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'PATIENT NOTES (${items.length})',
+                      style: GoogleFonts.poppins(
+                        color: AppColors.accentBlue,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ...items.map(
+                  (it) => Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _instructionRow(it),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _instructionRow(Map<String, dynamic> it) {
+    final type = it['type'] as String? ?? 'text';
+    if (type == 'audio') {
+      final url = it['audioUrl'] as String?;
+      final dur = (it['durationSec'] as num?)?.toInt() ?? 0;
+      return Row(
+        children: [
+          const Icon(
+            Icons.mic_rounded,
+            size: 16,
+            color: AppColors.brandRed,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Voice note · ${dur}s',
+              style: GoogleFonts.poppins(
+                color: AppColors.navy,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (url != null && url.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => onPlayAudio(url),
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text('Play'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: AppColors.accentBlue,
+              ),
+            )
+          else
+            Text(
+              'Inline',
+              style: GoogleFonts.poppins(
+                color: AppColors.textLight,
+                fontSize: 10,
+              ),
+            ),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.sticky_note_2_outlined,
+          size: 16,
+          color: AppColors.accentBlue,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            (it['text'] as String? ?? '').trim(),
+            style: GoogleFonts.poppins(
+              color: AppColors.navy,
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

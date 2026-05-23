@@ -88,14 +88,24 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
     }
   }
 
-  Future<void> _ignoreAndExit({required bool showFeedback}) async {
+  /// Auto-ignore (timer expired, system back, etc.). We don't prompt for a
+  /// reason here because it's not a user-initiated refusal — it's silent
+  /// timeout. Logged as 'timeout'.
+  Future<void> _ignoreAndExit({
+    required bool showFeedback,
+    String reason = 'timeout',
+  }) async {
     if (_closing) return;
     _closing = true;
     _countdownTimer?.cancel();
     await NotificationService.dismissRequestNotification(widget.requestId);
 
     try {
-      await _firestoreService.ignorePendingRequest(widget.requestId, _uid);
+      await _firestoreService.ignorePendingRequest(
+        widget.requestId,
+        _uid,
+        reason: reason,
+      );
     } catch (e) {
       _closing = false;
       if (!mounted) return;
@@ -122,8 +132,135 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
     context.go('/driver/home');
   }
 
-  void _decline() {
-    unawaited(_ignoreAndExit(showFeedback: true));
+  /// User tapped "Decline" → ask why with 1-tap chips, then ignore with that
+  /// reason. Required for ops analytics: we want to know where we're losing
+  /// requests (too-far drivers = need more density in that area; wrong-type
+  /// drivers = mismatch in dispatch logic; on-break = scheduling).
+  Future<void> _decline() async {
+    _countdownTimer?.cancel();
+    final reason = await _showRefusalReasonSheet();
+    if (reason == null) {
+      // User backed out of the sheet — resume countdown.
+      if (mounted && !_closing) _startCountdown();
+      return;
+    }
+    await _ignoreAndExit(showFeedback: true, reason: reason);
+  }
+
+  Future<String?> _showRefusalReasonSheet() async {
+    const reasons = <Map<String, dynamic>>[
+      {'id': 'too_far', 'label': 'Too far', 'icon': Icons.straighten_rounded},
+      {
+        'id': 'wrong_type',
+        'label': 'Wrong ambulance type',
+        'icon': Icons.local_taxi_rounded,
+      },
+      {'id': 'on_break', 'label': 'On break', 'icon': Icons.coffee_rounded},
+      {
+        'id': 'vehicle_issue',
+        'label': 'Vehicle issue',
+        'icon': Icons.build_rounded,
+      },
+      {
+        'id': 'patient_unreachable',
+        'label': 'Patient unreachable',
+        'icon': Icons.phone_disabled_rounded,
+      },
+      {'id': 'other', 'label': 'Other', 'icon': Icons.more_horiz_rounded},
+    ];
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isDismissible: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  'Why are you declining?',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.navy,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'One tap — your answer helps dispatch add capacity in the right places.',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: reasons.map((r) {
+                    return ActionChip(
+                      onPressed: () =>
+                          Navigator.of(ctx).pop(r['id'] as String),
+                      avatar: Icon(
+                        r['icon'] as IconData,
+                        size: 16,
+                        color: AppColors.brandRed,
+                      ),
+                      label: Text(
+                        r['label'] as String,
+                        style: GoogleFonts.poppins(
+                          color: AppColors.navy,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      backgroundColor: AppColors.brandRed.withValues(
+                        alpha: 0.06,
+                      ),
+                      side: BorderSide(
+                        color: AppColors.brandRed.withValues(alpha: 0.2),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text(
+                      'Keep this request',
+                      style: GoogleFonts.poppins(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -165,7 +302,10 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
           canPop: false,
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) {
-              unawaited(_ignoreAndExit(showFeedback: false));
+              unawaited(_ignoreAndExit(
+                showFeedback: false,
+                reason: 'back_dismissed',
+              ));
             }
           },
           child: Scaffold(
@@ -327,7 +467,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
                             child: OutlinedButton(
                               onPressed: (_accepting || _closing)
                                   ? null
-                                  : _decline,
+                                  : () => unawaited(_decline()),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.white,
                                 side: BorderSide(
