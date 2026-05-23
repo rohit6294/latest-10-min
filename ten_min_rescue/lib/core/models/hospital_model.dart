@@ -101,6 +101,30 @@ class HospitalModel {
     }
   }
 
+  /// Conservative bed count shown to drivers — 30% less than the hospital's
+  /// declared availability (floored, never negative). Hospitals tend to
+  /// over-state capacity, so the driver app should plan against a buffered
+  /// number.
+  static int _driverDiscount(int v) =>
+      v <= 0 ? 0 : (v * 0.7).floor();
+
+  int get icuAvailableForDriver => _driverDiscount(icuAvailable);
+  int get advancedAvailableForDriver => _driverDiscount(advancedAvailable);
+  int get normalAvailableForDriver => _driverDiscount(normalAvailable);
+
+  /// Driver-facing version of [availableBedsForType] — 30% lower than the
+  /// hospital-reported number.
+  int availableBedsForDriver(AmbulanceType type) {
+    switch (type) {
+      case AmbulanceType.A:
+        return icuAvailableForDriver;
+      case AmbulanceType.B:
+        return advancedAvailableForDriver;
+      case AmbulanceType.C:
+        return normalAvailableForDriver;
+    }
+  }
+
   /// Returns total beds for the given ambulance type
   int totalBedsForType(AmbulanceType type) {
     switch (type) {

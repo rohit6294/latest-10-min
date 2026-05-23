@@ -439,6 +439,16 @@ export default function TrackPage() {
           </div>
         )}
 
+        {/* Direct driver call — shown right above helpline so patient can reach driver fast */}
+        {hasDriver && req.driverPhone && (
+          <a
+            href={`tel:${req.driverPhone}`}
+            className="block w-full bg-green-600 hover:bg-green-700 text-white font-bold text-center py-4 rounded-2xl shadow-lg shadow-green-600/30 transition-colors"
+          >
+            📞 Call Driver{req.driverName ? ` (${req.driverName})` : ''}: {req.driverPhone}
+          </a>
+        )}
+
         {/* Always-visible emergency call */}
         <a
           href="tel:+917866067136"

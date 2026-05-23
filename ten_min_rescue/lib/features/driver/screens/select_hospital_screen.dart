@@ -115,7 +115,7 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
               type: AmbulanceType.A,
               label: 'ICU Bed (Type A)',
               color: AppColors.brandRed,
-              available: hospital.icuAvailable,
+              available: hospital.icuAvailableForDriver,
               total: hospital.icuBeds,
             ),
             const SizedBox(height: 10),
@@ -124,7 +124,7 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
               type: AmbulanceType.B,
               label: 'Advanced Bed (Type B)',
               color: AppColors.warningAmber,
-              available: hospital.advancedAvailable,
+              available: hospital.advancedAvailableForDriver,
               total: hospital.advancedBeds,
             ),
             const SizedBox(height: 10),
@@ -133,7 +133,7 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
               type: AmbulanceType.C,
               label: 'Normal Bed (Type C)',
               color: AppColors.onlineGreen,
-              available: hospital.normalAvailable,
+              available: hospital.normalAvailableForDriver,
               total: hospital.normalBeds,
             ),
           ],
@@ -604,8 +604,28 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                   ],
                 ],
               ),
-              if (hospital.facilities.isNotEmpty) ...[
-                const SizedBox(height: 8),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.medical_services_rounded,
+                    color: AppColors.accentBlue,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'FACILITIES',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.textLight,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              if (hospital.facilities.isNotEmpty)
                 Wrap(
                   spacing: 6,
                   runSpacing: 4,
@@ -617,22 +637,34 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.navy.withValues(alpha: 0.05),
+                            color: AppColors.accentBlue.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color:
+                                  AppColors.accentBlue.withValues(alpha: 0.25),
+                            ),
                           ),
                           child: Text(
                             f,
                             style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              color: AppColors.navy,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 10.5,
+                              color: AppColors.accentBlue,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                       )
                       .toList(),
+                )
+              else
+                Text(
+                  'No facilities listed',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: AppColors.textLight,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
-              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -672,21 +704,21 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
       children: [
         _bedCell(
           'ICU',
-          hospital.icuAvailable,
+          hospital.icuAvailableForDriver,
           hospital.icuBeds,
           type == AmbulanceType.A,
         ),
         const SizedBox(width: 8),
         _bedCell(
           'Advanced',
-          hospital.advancedAvailable,
+          hospital.advancedAvailableForDriver,
           hospital.advancedBeds,
           type == AmbulanceType.B,
         ),
         const SizedBox(width: 8),
         _bedCell(
           'Normal',
-          hospital.normalAvailable,
+          hospital.normalAvailableForDriver,
           hospital.normalBeds,
           type == AmbulanceType.C,
         ),

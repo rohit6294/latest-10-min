@@ -192,7 +192,9 @@ function buildRequestEventMessages({
   hospital,
 }) {
   const driverName = driver?.name || 'the ambulance driver'
-  const driverPhone = driver?.phone ? `\nDriver phone: ${driver.phone}` : ''
+  const driverPhone = driver?.phone
+    ? `\n📞 *Call driver:* ${driver.phone}`
+    : ''
   const vehicleNumber = driver?.vehicleNumber
     ? `\nVehicle: ${driver.vehicleNumber}`
     : ''

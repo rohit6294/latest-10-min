@@ -367,7 +367,7 @@ function Step1Info({ description, setDescription, patientName, setPatientName, p
         </div>
       )}
 
-      <div className="mt-auto pt-6">
+      <div className="mt-6 pb-4">
         <button
           onClick={onNext}
           className="w-full bg-brand-red hover:bg-brand-red-dark text-white font-bold py-4 rounded-2xl transition-colors text-base"
@@ -420,7 +420,7 @@ function Step2Type({ ambulanceType, setAmbulanceType, onBack, onNext }) {
         })}
       </div>
 
-      <div className="mt-auto pt-6 grid grid-cols-3 gap-3">
+      <div className="mt-6 pb-4 grid grid-cols-3 gap-3">
         <button
           onClick={onBack}
           className="bg-white/10 hover:bg-white/15 text-white font-semibold py-4 rounded-2xl transition-colors"
@@ -463,7 +463,7 @@ function Step3Hospital({ hospitals, loading, selectedHospitalId, setSelectedHosp
         Hospitals with <span className="text-brand-red font-semibold">{typeName} beds</span> available
       </p>
 
-      <div className="space-y-2.5 flex-1 overflow-y-auto -mx-1 px-1 max-h-[55vh]">
+      <div className="space-y-2.5 overflow-y-auto -mx-1 px-1 max-h-[45vh]">
         <button
           onClick={() => setSelectedHospitalId(null)}
           className={`w-full text-left rounded-2xl p-4 border-2 transition-all ${
@@ -528,7 +528,7 @@ function Step3Hospital({ hospitals, loading, selectedHospitalId, setSelectedHosp
         })}
       </div>
 
-      <div className="mt-auto pt-6 grid grid-cols-3 gap-3">
+      <div className="mt-4 pb-4 grid grid-cols-3 gap-3">
         <button
           onClick={onBack}
           className="bg-white/10 hover:bg-white/15 text-white font-semibold py-4 rounded-2xl transition-colors"
@@ -572,7 +572,7 @@ function Step4Confirm({ description, urgency, ambulanceType, hospital, coords, o
         <ReviewRow label="Location" value={`${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`} small />
       </div>
 
-      <div className="mt-auto pt-6 space-y-3">
+      <div className="mt-6 pb-4 space-y-3">
         <button
           onClick={onSend}
           className="w-full bg-brand-red hover:bg-brand-red-dark text-white font-extrabold py-5 rounded-2xl transition-colors text-lg shadow-2xl shadow-brand-red/30 animate-pulse-glow"
