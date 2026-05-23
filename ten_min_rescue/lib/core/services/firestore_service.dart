@@ -282,12 +282,25 @@ class FirestoreService {
     }, SetOptions(merge: true));
 
     // Per-driver aggregate so ops can scan "why is this driver declining so
-    // often / why are we losing requests in this area".
-    await _db.doc(FirestorePaths.driver(driverId)).set({
-      'lastDeclineReason': reason,
-      'lastDeclineAt': FieldValue.serverTimestamp(),
-      'declineCounts.$reason': FieldValue.increment(1),
-    }, SetOptions(merge: true));
+    // often / why are we losing requests in this area". Uses update() so the
+    // dot-notation actually nests `declineCounts.<reason>` instead of being
+    // written as a flat literal key.
+    try {
+      await _db.doc(FirestorePaths.driver(driverId)).update({
+        'lastDeclineReason': reason,
+        'lastDeclineAt': FieldValue.serverTimestamp(),
+        'declineCounts.$reason': FieldValue.increment(1),
+      });
+    } catch (_) {
+      // Driver doc might not have declineCounts yet — fall back to a merge
+      // that initialises the map. Safe because increment() handles missing
+      // fields by treating them as 0.
+      await _db.doc(FirestorePaths.driver(driverId)).set({
+        'lastDeclineReason': reason,
+        'lastDeclineAt': FieldValue.serverTimestamp(),
+        'declineCounts': {reason: FieldValue.increment(1)},
+      }, SetOptions(merge: true));
+    }
   }
 
   // ─── Patient instructions subcollection ──────────────────────────────────

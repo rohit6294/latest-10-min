@@ -1,7 +1,7 @@
 # Suraksha Kavach — Session Handoff
 
-> Open this first when you resume tomorrow.
-> Last updated: 2026-05-22 (evening)
+> Open this first when you resume.
+> Last updated: 2026-05-24 (00:11 IST)
 
 ---
 
@@ -10,222 +10,168 @@
 | Piece | Status | URL |
 |-------|--------|-----|
 | Web app (patient site, dashboards) | ✅ LIVE | https://min-rescue.web.app |
-| Firestore rules + indexes | ✅ Deployed to `min-rescue` project | — |
-| Render backend (replaces Cloud Functions) | ✅ LIVE | https://min-rescue-backend.onrender.com |
-| Render `/healthz` health check | ✅ Returns 200 `{ok:true,...}` | https://min-rescue-backend.onrender.com/healthz |
-| Render `/whatsapp/webhook` GET | ✅ Returns 200 "OK" | https://min-rescue-backend.onrender.com/whatsapp/webhook |
-| Gupshup WhatsApp webhook | ✅ Saved on Gupshup (Gupshup v2 format) | Points to Render `/whatsapp/webhook` |
-| GitHub repo | ✅ All code pushed | https://github.com/rohit6294/latest-10-min |
+| Firestore rules + indexes | ✅ Deployed to `min-rescue` | — |
+| Render backend (replaces Cloud Functions) | ✅ LIVE — auto-redeploys from `main` | https://min-rescue-backend.onrender.com |
+| `/healthz` | ✅ 200 | https://min-rescue-backend.onrender.com/healthz |
+| `/whatsapp/webhook` (Gupshup v2) | ✅ 200 | https://min-rescue-backend.onrender.com/whatsapp/webhook |
+| `/rescue/rate` (NEW) | ✅ deployed, returns 400 on empty body | — |
+| `/rescue/instruction` (NEW) | ✅ deployed, returns 400 on empty body | — |
+| GitHub repo (main) | ✅ pushed | https://github.com/rohit6294/latest-10-min |
+| Latest APK | ✅ built | `ten_min_rescue/build/app/outputs/flutter-apk/app-release-20260524-0011.apk` (53 MB) |
 
 ---
 
-## 2. What's LEFT for tomorrow
+## 2. Where we are in the product roadmap
 
-### Tomorrow's TODO (in order)
+Suraksha Kavach is an emergency ambulance dispatch platform: patient → SOS via web/WhatsApp → nearest driver → hospital → live tracking the whole way. Three apps + one backend on Firebase Spark (free) plan.
 
-1. **Set up cron-job.org keepalive** (5 min) — prevents Render free tier from sleeping (cold start = 30–60s delay, fatal for emergency app).
-2. **Test WhatsApp SOS end-to-end** — send "SOS" to the Gupshup sandbox number from a phone.
-3. **Test admin account creation** — log in to admin dashboard, create a test hospital (should no longer show "internal" error).
-4. **Test patient SOS flow** — open `/sos` on web, submit, verify driver app gets the alert.
-5. **Get the APK** from GitHub Actions and install on a real driver phone.
-6. **Gupshup production setup** (optional, later) — graduate from sandbox to your own WhatsApp business number (₹500–₹2000/mo). See section 6.
+Recent sprints have been pushing it past "table-stakes parity with 108 / RED.Health / Dial4242" and toward features investors and real patients actually need:
 
----
-
-## 3. Resume instructions — Tomorrow morning
-
-### A. Set up cron-job.org (5 minutes)
-
-1. Open https://cron-job.org and log in (account already created).
-2. Click **Cronjobs** → **Create cronjob**.
-3. Fill:
-   - **Title:** `min-rescue keepalive`
-   - **URL:** `https://min-rescue-backend.onrender.com/healthz`
-   - **Schedule:** Every 14 minutes
-4. Save and enable. Verify it shows green "200 OK" pings in the execution log within 14 min.
-
-### B. Test the full flow
-
-#### Test 1: Admin creates a hospital (the "internal" error bug fix)
-
-1. Open https://min-rescue.web.app/admin
-2. Log in with admin email/password (from Firebase Auth admins collection).
-3. Click **Create Account** tab.
-4. Pick **Hospital** → fill in name, email, password, phone, address.
-5. Click **Pick on Map** → search address or click map → confirm location.
-6. Click **Create**.
-7. **Expected:** "Hospital account created: ... ✅" — no "internal" error.
-8. Verify in Firestore: `hospitals/{uid}` doc exists with `location` GeoPoint.
-
-#### Test 2: Patient SOS → driver alert (the missing-trigger bug fix)
-
-Pre-req: a driver account online on a phone with the APK.
-
-1. On phone: log in as driver → tap **Go Online** → grant location permission.
-2. On laptop browser: open https://min-rescue.web.app/sos (incognito so it doesn't auth as admin).
-3. Fill form → grant location → submit.
-4. **Expected within ~10 sec:** driver phone shows full-screen incoming-ride alert with siren.
-5. Tap **Accept** → drive through flow → complete.
-6. On laptop: `/track/<requestId>` should show live ambulance position.
-
-#### Test 3: WhatsApp SOS (Gupshup sandbox)
-
-1. On phone WhatsApp, save `+1 555 942 9811` as a contact.
-2. Send `SOS` to it.
-3. **Expected reply:** "🚨 EMERGENCY RECEIVED!" + a "Share Location" button.
-4. Tap Share Location → pick current location.
-5. **Expected:** confirmation message with Ref ID, AND a new `rescue_requests` doc in Firestore, AND driver app gets an alert.
+- **Reach the driver fast** — direct call button on track page + in WhatsApp.
+- **Safety net when matching fails** — 108 fallback banner after 60s.
+- **Driver accountability** — gamification (rating + completed rides + points), pre-shift kit checklist.
+- **Hospital pre-arrival prep** — ER sees driver contact + patient instructions before the ambulance arrives.
+- **Patient agency en route** — text + voice instructions added on the live track page.
+- **Ops analytics** — every driver decline carries a reason chip ("too_far", "wrong_type", …).
 
 ---
 
-## 4. Critical URLs & credentials
+## 3. What changed in the last 2 sessions (2026-05-22 → 2026-05-24)
 
-| Thing | Value |
-|-------|-------|
-| GitHub repo | https://github.com/rohit6294/latest-10-min |
-| Web app | https://min-rescue.web.app |
-| Render backend | https://min-rescue-backend.onrender.com |
-| Render service ID | `srv-d889d1t7vvec738j6bjg` |
-| Firebase project | `min-rescue` |
-| Firebase project (Spark / free plan) console | https://console.firebase.google.com/project/min-rescue |
-| Gupshup app name | `10MinRescue` |
-| Gupshup sandbox source number | `+15559429811` |
-| Gupshup API key | `sk_dad325891dc84130b2cba60b090a2057` |
-| Gupshup customer ID | `4000343295` |
+### Session A — 2026-05-22 (TrackPage driver call + WhatsApp polish + SOS layout + bed buffer)
 
-### Render environment variables (already set on Render dashboard)
+Commit `eb4a8fb` — _feat: surface driver phone, tighten SOS wizard, buffer hospital beds for drivers_
 
-- `FIREBASE_SERVICE_ACCOUNT_B64` — base64 of Firebase Admin SDK service account JSON
-- `ALLOWED_ORIGINS` — `https://min-rescue.web.app,http://localhost:5173`
-- `GUPSHUP_API_KEY` — `sk_dad325891dc84130b2cba60b090a2057`
-- `GUPSHUP_APP_NAME` — `10MinRescue`
-- `GUPSHUP_SOURCE_NUMBER` — `15559429811`
+- Web `/track/:id` shows a prominent green "Call Driver" button right above the helpline whenever a driver is assigned.
+- WhatsApp `driver_assigned` / `ambulance_arrived` messages now include a tappable "📞 Call driver: <phone>" line.
+- SOS wizard: replaced `mt-auto pt-6` with `mt-6 pb-4` on all step button bars so Back/Continue sit immediately under the form on small phones.
+- Driver hospital list: explicit "FACILITIES" section per hospital with a "No facilities listed" fallback when empty.
+- Driver app shows hospital bed counts at **30% less** than the hospital-reported number. **This is a deliberate product decision — see `MEMORY.md` → `project_driver_bed_buffer.md`.** Patient SOS / hospital dashboard / admin still see raw counts.
 
-⚠️ **The current Firebase service account key is the one pasted in chat earlier — it should be treated as compromised.** Once everything is verified working, generate a fresh key from Firebase Console → Project Settings → Service Accounts, base64-encode it, replace the Render env var, and revoke the old key.
+Files touched: `10min-rescue/src/pages/{TrackPage,SosPage}.jsx`, `render-backend/routes/whatsapp.js`, `ten_min_rescue/lib/core/models/hospital_model.dart`, `ten_min_rescue/lib/features/driver/screens/{select_hospital_screen,navigate_to_hospital_screen}.dart`.
 
----
+### Session B — 2026-05-23/24 (in-flight features)
 
-## 5. Architecture (free-tier hybrid)
+Commit `2d61b51` — _feat: 108 fallback, driver rating + gamification, patient instructions, refusal reasons, pre-shift checklist, hospital handoff_
 
-```
-React web app  ──── Firestore SDK ───── Firebase Spark (FREE)
-(min-rescue.web.app)                    ├─ Firestore
-       │                                ├─ Firebase Auth
-       │ fetch                          ├─ FCM (push)
-       ▼                                └─ Hosting
-Render Express (FREE 750 hrs/mo)
-(min-rescue-backend.onrender.com)
-       │ uses firebase-admin SDK
-       │
-       ├─ POST /admin/create-account   (replaces httpsCallable adminCreateAccount)
-       ├─ POST /rescue/match-driver    (replaces onRescueRequestCreated trigger)
-       ├─ POST /rescue/match-hospital  (replaces onHospitalAccept hospital search)
-       ├─ POST /whatsapp/webhook       (Gupshup inbound — replaces whatsapp-webhook/)
-       ├─ GET  /healthz                (cron-job.org pings every 14 min to prevent sleep)
-       │
-       └── setTimeout-based 30s radius expansion (replaces Cloud Tasks queue)
+#### 108 fallback
+- `TrackPage.jsx` ticks once a second and computes `elapsedMs` from `req.createdAt`. If status is still `pending_driver` after **60 seconds**, a red banner renders above the map with a "📞 CALL 108 NOW" CTA. We keep dispatching our drivers in parallel — the banner just gives the caller a safety net.
 
-Gupshup WhatsApp ──── inbound msg ──── POST /whatsapp/webhook
-       ▲
-       └── outbound msg (location request, confirmations) sent by Render
+#### Driver rating + gamification
+- `DriverModel` gained `rating`, `totalRatings`, `completedRides`, plus a derived `points` getter (`completedRides * 10 + (rating * 20).round()`).
+- Driver home now shows a top-row stat strip: **Rating / Rides / Points**, with Vehicle / Status on the row below.
+- New backend route **`POST /rescue/rate`** body `{ requestId, rating: 1-5, comment? }`:
+  - Idempotent on `rescue_requests.patientRating` — re-submits return 409.
+  - Requires `status: 'completed'`.
+  - Inside a Firestore transaction it: writes `patientRating` to the request, then recomputes the driver's running mean and bumps `completedRides`.
+- On TrackPage, when the request is completed and not yet rated, a star modal (`RatingPanel`) appears. After submit, replaced with a "🙏 thanks for your feedback" card.
 
-cron-job.org ──── GET /healthz every 14 min ──── keeps Render awake
-```
+#### Patient instructions (text + voice)
+- New subcollection: `rescue_requests/{id}/instructions/{id}` ordered by `createdAt`.
+  - Text payload: `{ type: 'text', text }` (≤500 chars).
+  - Audio payload: `{ type: 'audio', mimeType, durationSec, audioUrl }` — or `audioBase64` if Storage upload failed.
+- New backend route **`POST /rescue/instruction`**:
+  - Body `{ requestId, type: 'text'|'audio', text?, audioBase64?, mimeType?, durationSec? }`.
+  - For audio: decodes base64, uploads to Firebase Storage at `instructions/{requestId}/{id}.<ext>`, calls `makePublic()`, returns the public URL. Falls back to inline base64 in Firestore if Storage isn't enabled (~700 KB cap).
+  - Sends an FCM data push to the assigned driver (`type: patient_instruction`) when a new note arrives.
+  - Rejects writes on closed (`completed`/`cancelled`) requests.
+- On TrackPage, `InstructionsPanel`:
+  - Short text input + "Send text" button.
+  - "🎤 Record voice" button uses `MediaRecorder` (`audio/webm;codecs=opus`, 24 kbps), 30s auto-stop, base64-uploads to the backend.
+  - Lists all sent instructions (with HTML5 `<audio>` element when an audioUrl/base64 is present).
+- Driver app (`navigate_to_patient_screen.dart`) — new `_InstructionsStripe` widget streams the subcollection into the bottom sheet between the patient row and the ETA chips. Voice notes "Play" via `url_launcher` → system browser/media player.
 
-**Why this matters:** Firebase Blaze plan was rejected (user does not want to add a credit card). All compute moved off Cloud Functions to Render. Firestore + Auth + FCM stay on Firebase Spark (free, no auto-pause).
+#### Hospital pre-arrival handoff
+- `incoming_ambulance_screen.dart` now scrolls (wraps the patient card in `Flexible + SingleChildScrollView`) and adds:
+  - **`_DriverHandoffCard`** — name, vehicle, tap-to-call icon, streams from `drivers/{assignedDriverId}`.
+  - **`_HospitalInstructionsCard`** — same `watchInstructions()` stream the driver sees, so ER prep gets the patient's "diabetic / stroke onset 7:42" notes before the ambulance arrives.
 
----
+#### Refusal reason capture
+- `FirestoreService.ignorePendingRequest(requestId, driverId, {reason})` now takes a reason code. Persists:
+  - `rescue_requests.declinedDriverIds` (existing) + a structured `declineLog[]` entry per decline.
+  - On the driver doc: `lastDeclineReason`, `lastDeclineAt`, and `declineCounts.<reason>` increment (uses `update()` for proper nesting; falls back to `set(merge:true)` if doc has no map yet).
+- `incoming_request_screen.dart`:
+  - "Decline" tap now opens a bottom sheet of 1-tap reason chips: **Too far · Wrong ambulance type · On break · Vehicle issue · Patient unreachable · Other**.
+  - Timer cancels while the sheet is open and resumes if the driver backs out.
+  - System back-button dismissal logs reason `back_dismissed`; timer expiry logs `timeout`.
 
-## 6. Gupshup production migration (optional, when ready)
+#### Pre-shift equipment checklist
+- New screen `equipment_checklist_screen.dart` — 6-item kit verification (oxygen, defib, suction, stretcher belts, first-aid kit, fuel & vehicle). Driver must check all 6 before "Go Online" enables.
+- `DriverModel` gained `lastEquipmentCheckAt` + `hasFreshEquipmentCheck` (12 h freshness window).
+- `driver_home_screen._toggleOnline(isOnline, driver)` now intercepts the off→on transition: if `!driver.hasFreshEquipmentCheck`, push the checklist screen as a `fullscreenDialog`. If the driver bails, they stay offline. If they complete, `FirestoreService.recordEquipmentCheck()` stamps the timestamp and the driver flips online.
 
-Sandbox is fine for testing but the source number is shared and US-based (`+15559429811`). For real users to message your business:
+Files touched in commit `2d61b51`:
+- `10min-rescue/src/pages/TrackPage.jsx`
+- `render-backend/routes/rescue.js`
+- `ten_min_rescue/lib/core/models/driver_model.dart`
+- `ten_min_rescue/lib/core/services/firestore_service.dart`
+- `ten_min_rescue/lib/features/driver/screens/driver_home_screen.dart`
+- `ten_min_rescue/lib/features/driver/screens/incoming_request_screen.dart`
+- `ten_min_rescue/lib/features/driver/screens/navigate_to_patient_screen.dart`
+- `ten_min_rescue/lib/features/hospital/screens/incoming_ambulance_screen.dart`
+- _new_ `ten_min_rescue/lib/features/driver/screens/equipment_checklist_screen.dart`
 
-1. Inside Gupshup app → **Go Live** / **Upgrade to Production**.
-2. Required:
-   - A phone number NOT currently on WhatsApp (regular or Business app).
-   - Registered business + GSTIN.
-   - Facebook Business Manager account.
-3. Cost: **~₹0.30–0.85 per business-initiated message** + ~₹0.30 Meta fee per service conversation. User-initiated chats free for 24 hr after they message you. **Expect ₹500–₹2000/month** at small/medium volume. No fixed subscription.
-4. Approval takes 1–10 days.
-5. Once approved, update `GUPSHUP_SOURCE_NUMBER` on Render to the new number.
-6. Create message **templates** in Gupshup → Templates (required for production-initiated messages): `sos_received`, `driver_dispatched`, `hospital_assigned`.
-
----
-
-## 7. Get the Android APK
-
-1. Open https://github.com/rohit6294/latest-10-min/actions
-2. If Actions is disabled, click **"I understand my workflows, go ahead and enable them"**.
-3. Click **Build Android APK** workflow → **Run workflow** → Run.
-4. Wait ~10 min for build.
-5. Click into the finished run → scroll to **Artifacts** at the bottom → download `ten_min_rescue-apk-<sha>.zip`.
-6. Inside the zip:
-   - `app-arm64-v8a-release.apk` (most modern phones, smaller — install this one)
-   - `app-armeabi-v7a-release.apk` (older 32-bit phones)
-   - `app-release.apk` (universal, larger, works everywhere)
-7. Transfer to phone → tap to install → allow "Install from unknown sources" first time.
-
-For a permanent download URL, push a `v1.0.0` git tag and the APKs get attached to a GitHub Release.
+(One post-commit follow-up: the `declineCounts.$reason` write now uses `update()` semantics — not yet committed. Stage when picking up next session.)
 
 ---
 
-## 8. Known issues / gotchas
+## 4. Architecture pointers (so the next Claude doesn't re-derive them)
 
-| Issue | Mitigation |
-|-------|------------|
-| Render free tier sleeps after 15 min idle, first request after sleep takes 30–60s | cron-job.org pings `/healthz` every 14 min (set up in step 3A above) |
-| `/` route returns 404 on Render free tier (caching layer quirk, not a bug) | Doesn't matter — `/healthz` and `/whatsapp/webhook` work correctly |
-| Firebase service account key was pasted in chat earlier | Treat as compromised. Rotate after verifying everything works |
-| Gupshup sandbox number is US-based and shared | Sandbox is fine for testing. Migrate to production (your own number) when ready |
-| Old Cloud Functions code in `ten_min_rescue/functions/` is unused but still in repo | Don't deploy it (would need Blaze). It's reference material for the Render port. Safe to delete later |
-| Email domain `@10minrescue.com` not changed to `@surakshakavach.com` | Intentional — would break working email until you own the new domain's MX records |
-
----
-
-## 9. Useful commands
-
-```powershell
-# Redeploy web app after changes
-cd "C:\Users\rohit\Desktop\10  min\10min-rescue"
-npm run build
-C:\Users\rohit\AppData\Roaming\npm\firebase.cmd deploy --only hosting --project min-rescue
-
-# Redeploy Firestore rules + indexes after changes
-cd "C:\Users\rohit\Desktop\10  min\ten_min_rescue"
-C:\Users\rohit\AppData\Roaming\npm\firebase.cmd deploy --only firestore:rules,firestore:indexes --project min-rescue
-
-# Test Render backend manually
-curl https://min-rescue-backend.onrender.com/healthz
-
-# View Render logs (Live tail)
-# → Render dashboard → min-rescue-backend service → Logs tab
-
-# Trigger APK build manually
-# → https://github.com/rohit6294/latest-10-min/actions
-# → "Build Android APK" → "Run workflow" → Run
-```
+- **Three sub-apps, one Firestore:**
+  - `10min-rescue/` — React 19 + Vite + Tailwind. Patient SOS + admin + hospital + fleet web dashboards + tracking page. Hosted on Firebase Hosting at https://min-rescue.web.app.
+  - `ten_min_rescue/` — Flutter (Riverpod + GoRouter). Drivers + hospitals.
+  - `whatsapp-webhook/` — older Vercel handler (still present, but **not the live path**). The active WhatsApp webhook is `render-backend/routes/whatsapp.js`.
+- **`render-backend/`** — Express on Render, uses `firebase-admin`. Routes:
+  - `/healthz`, `/admin/*`, `/rescue/*` (match-driver, match-hospital, **rate**, **instruction**), `/whatsapp/{webhook,request-event}`.
+  - Auto-deploys on `git push origin main` (free tier, ~1–3 min). To force a redeploy, push an empty commit `git commit --allow-empty -m "chore: trigger redeploy"`.
+- **Geo matching** — geohash + radius expansion 1 → 2 → 5 → 10 km, scheduled by `lib/matching.js` using setTimeout (Render keeps the worker warm; cron-job.org pings prevent sleep).
+- **WhatsApp:** Gupshup v2 inbound → `routes/whatsapp.js`. Driver/hospital state changes call the same backend `/whatsapp/request-event` to push status messages back to the patient's WhatsApp.
+- **Rescue request lifecycle:** `pending_driver → driver_assigned → patient_picked_up → (awaiting_hospital_choice | hospital_assigned) → in_transit → completed` (or `cancelled`). Codified in `RescueRequestModel`.
+- **Hospital bed buffer (30%):** see [Memory → project_driver_bed_buffer.md](.claude/projects/.../memory/project_driver_bed_buffer.md). Driver app uses `HospitalModel.availableBedsForDriver(type)` / `*AvailableForDriver` getters; raw fields stay for hospital/patient/admin UIs.
 
 ---
 
-## 10. Recent commits (most recent first)
+## 5. Operational notes
 
-```
-7c98d60  feat(backend): add Render Express backend to replace Cloud Functions on free tier
-097817b  fix(critical): write geohash when driver goes online + add map picker for hospital address
-d76b1a0  feat(admin): add account creation for hospitals, fleets, and drivers
-bc8d327  fix(ci): use latest stable Flutter instead of pinned 3.24.0
-e0174a9  Rebrand to Suraksha Kavach across all user-facing surfaces
-22e68da  10 Min Rescue: initial commit
-```
-
----
-
-## 11. Open task list (for Claude when resuming)
-
-When you start tomorrow's session, paste this prompt to Claude:
-
-> Read `session.md` and resume from section 2 (What's LEFT for tomorrow). Start with section 3.A — guide me through setting up cron-job.org. The Render backend is already live at https://min-rescue-backend.onrender.com.
+- **Service account** lives at `min-rescue-firebase-adminsdk-fbsvc-32a002c3db.json` (root) and `render-backend/` (same file copy). Render reads it via `FIREBASE_SERVICE_ACCOUNT_B64` env var.
+- **Firebase Storage:** as of this writing, may not be initialized. The `/rescue/instruction` route silently falls back to inline-base64 if Storage isn't ready. To enable it cleanly:
+  1. Open https://console.firebase.google.com/project/min-rescue/storage → "Get started" → default rules.
+  2. Replace rules with the policy listed in `BUGS.md` item #2.
+- **Free-tier ceilings to watch:**
+  - Render free worker sleeps after ~15 min idle → cron-job.org keepalive ping every 14 min.
+  - Firestore Spark = 50K reads / 20K writes / 1 GB stored / day. Each instruction adds one read per subscriber, so a busy ride with 5 followers + 10 instructions = 50 reads. Fine for now.
+  - Firebase Storage Spark = 5 GB stored, 1 GB downloaded/day. ~80 KB per voice note → ~12 K voice notes/day cap. Fine.
 
 ---
 
-**End of handoff. Good night.**
+## 6. Open todo list (from the task tracker)
+
+| # | Status | Item |
+|---|--------|------|
+| 9  | ✅ done | 108 fallback banner on TrackPage |
+| 10 | ✅ done | Driver rating + gamification |
+| 11 | ✅ done | Patient instructions subcollection (text + voice) |
+| 12 | ✅ done | Driver screen — display instructions |
+| 13 | ✅ done | Hospital pre-arrival handoff enrichment |
+| 14 | ✅ done | Commit, deploy, build APK |
+| 15 | ✅ done | Refusal reason capture |
+| 16 | ✅ done | Pre-shift equipment checklist |
+| 17 | ✅ done | Test full flow + log bugs (see BUGS.md) |
+| 18 | 🟡 in-progress | Update session.md (this file) |
+
+### Next obvious things to pick up
+
+1. Apply BUGS.md items 1, 2, 3 (Storage enablement + completedRides counted on `completeRide()`).
+2. Manual QA on a real device: patient SOS → driver accept on the new APK → text + voice instruction → hospital handoff card → rating after completion. Tick boxes at the bottom of BUGS.md.
+3. From competitor-analysis tier 1: medical ID profile + family SOS + crash auto-SOS are the highest-impact features still unbuilt.
+4. Commit the `declineCounts` Firestore write fix.
+
+---
+
+## 7. Glossary
+
+- **ICU / Advanced / Normal** = ambulance type A / B / C. `AmbulanceType` enum maps it both ways.
+- **Pending driver radius** = the geohash radius the matcher is currently scanning. Expands per the schedule above.
+- **Equipment freshness** = the 12 h window in which a driver doesn't need to re-do the pre-shift kit check (`DriverModel.equipmentCheckFreshness`).
+- **Refusal reason codes** = `too_far`, `wrong_type`, `on_break`, `vehicle_issue`, `patient_unreachable`, `other`, plus the system-issued `timeout` and `back_dismissed`.
+- **Public app URL** = `https://min-rescue.web.app` (set as `PUBLIC_APP_URL` in render-backend env so WhatsApp messages link back here).
