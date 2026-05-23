@@ -28,6 +28,8 @@ router.post('/create-account', async (req, res) => {
     contactPerson,
     vehicleNumber,
     vehicleType,
+    fleetId,
+    fleetName,
   } = req.body || {}
 
   if (!accountType || !email || !password || !displayName) {
@@ -94,15 +96,24 @@ router.post('/create-account', async (req, res) => {
         phone: phone || '',
         vehicleNumber: vehicleNumber || '',
         vehicleType: vehicleType || 'BLS',
+        ambulanceType: vehicleType === 'ALS' ? 'A' : vehicleType === 'BLS' ? 'B' : 'C',
         verificationStatus: 'verified',
         isOnline: false,
         isAvailable: true,
         currentTripId: null,
-        fleetId: null,
+        fleetId: fleetId || null,
+        fleetName: fleetName || null,
         documents: {},
         createdAt: now,
         createdBy: callerUid,
       })
+      // Link driver to fleet (bidirectional)
+      if (fleetId) {
+        await db.doc(`ambulance_fleets/${fleetId}`).set(
+          { driverIds: FieldValue.arrayUnion(uid) },
+          { merge: true }
+        )
+      }
     }
 
     res.json({

@@ -1152,6 +1152,7 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
   const [contactPerson, setContactPerson] = useState('')
   const [vehicleNumber, setVehicleNumber] = useState('')
   const [vehicleType, setVehicleType] = useState('BLS')
+  const [selectedFleetId, setSelectedFleetId] = useState('')
   const [icuBeds, setIcuBeds] = useState(0)
   const [advancedBeds, setAdvancedBeds] = useState(0)
   const [normalBeds, setNormalBeds] = useState(0)
@@ -1162,7 +1163,7 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
     setEmail(''); setPassword(''); setDisplayName(''); setPhone('')
     setAddress(''); setContactPerson(''); setVehicleNumber('')
     setVehicleType('BLS'); setIcuBeds(0); setAdvancedBeds(0); setNormalBeds(0)
-    setLocationCoords(null)
+    setLocationCoords(null); setSelectedFleetId('')
   }
 
   async function handleCreate(e) {
@@ -1182,7 +1183,14 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
           ...(locationCoords && { latitude: locationCoords.lat, longitude: locationCoords.lng }),
         }),
         ...(accountType === 'fleet' && { contactPerson: contactPerson || displayName, address }),
-        ...(accountType === 'driver' && { vehicleNumber, vehicleType }),
+        ...(accountType === 'driver' && {
+          vehicleNumber,
+          vehicleType,
+          ...(selectedFleetId && {
+            fleetId: selectedFleetId,
+            fleetName: fleets.find(f => f.id === selectedFleetId)?.name || '',
+          }),
+        }),
       }
       const res = await callBackend('/admin/create-account', { body: payload, idToken })
       setResult({ success: true, message: res.message })
@@ -1396,6 +1404,26 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
               </svg>
               Admin-created drivers are auto-verified. No document upload needed.
             </p>
+
+            {/* Fleet linking */}
+            <div className="pt-2">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Link to Fleet (Optional)</label>
+              <select
+                value={selectedFleetId}
+                onChange={e => setSelectedFleetId(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red bg-white"
+              >
+                <option value="">— No fleet (Independent driver) —</option>
+                {fleets.map(f => (
+                  <option key={f.id} value={f.id}>{f.name} {f.phone ? `(${f.phone})` : ''}</option>
+                ))}
+              </select>
+              {selectedFleetId && (
+                <div className="mt-1.5 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5">
+                  <span className="text-xs text-blue-700 font-medium">🚑 Will be linked to: {fleets.find(f => f.id === selectedFleetId)?.name}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
