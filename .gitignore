@@ -16,6 +16,7 @@ Thumbs.db
 *.p8
 service-account*.json
 serviceAccount*.json
+*firebase-adminsdk*.json
 GoogleService-Info.plist
 
 # ─── Node / React (10min-rescue, whatsapp-webhook, functions) ─────────────
