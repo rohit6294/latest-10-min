@@ -9,6 +9,24 @@ if (admin.apps.length === 0) {
 
 const db = admin.firestore()
 
+function formatTimestamp(value) {
+  if (!value) return 'N/A'
+  if (typeof value.toDate === 'function') {
+    return value.toDate().toLocaleString()
+  }
+  if (typeof value._seconds === 'number') {
+    return new Date(value._seconds * 1000).toLocaleString()
+  }
+  if (typeof value.seconds === 'number') {
+    return new Date(value.seconds * 1000).toLocaleString()
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const dt = new Date(value)
+    if (!Number.isNaN(dt.getTime())) return dt.toLocaleString()
+  }
+  return JSON.stringify(value)
+}
+
 async function run() {
   const snap = await db
     .collection('whatsapp_webhook_events')
@@ -26,7 +44,7 @@ async function run() {
     console.log('============================================================')
     console.log(`Doc ID: ${doc.id}`)
     console.log(`Status: ${data.status || 'N/A'}`)
-    console.log(`Received At: ${data.receivedAt ? data.receivedAt.toDate().toLocaleString() : 'N/A'}`)
+    console.log(`Received At: ${formatTimestamp(data.receivedAt)}`)
     console.log(`From: ${data.eventFrom || data.parsedEvent?.from || 'N/A'}`)
     console.log(`Kind: ${data.eventKind || data.parsedEvent?.kind || 'N/A'}`)
     console.log(`Action: ${data.action || 'N/A'}`)

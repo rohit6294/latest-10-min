@@ -1,9 +1,9 @@
 /**
  * Minimal Gupshup WhatsApp API client.
- * Docs: https://docs.gupshup.io/reference/post_sm-api-v1-msg
+ * Docs: https://docs.gupshup.io/docs/interactive-messages
  */
 
-const GUPSHUP_BASE = 'https://api.gupshup.io/sm/api/v1'
+const GUPSHUP_BASE = 'https://api.gupshup.io/wa/api/v1'
 
 function getCreds() {
   const apiKey = process.env.GUPSHUP_API_KEY

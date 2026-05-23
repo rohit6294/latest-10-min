@@ -64,6 +64,13 @@ const DEBUG_COLLECTION = 'whatsapp_webhook_events'
 function cleanForFirestore(value) {
   if (value === undefined || value === null) return null
   if (Array.isArray(value)) return value.map(cleanForFirestore)
+  if (
+    typeof value?.toDate === 'function' ||
+    typeof value?.toProto === 'function' ||
+    typeof value?.includeInDocumentTransform === 'function'
+  ) {
+    return value
+  }
   if (typeof value === 'object') {
     const out = {}
     for (const [k, v] of Object.entries(value)) {
