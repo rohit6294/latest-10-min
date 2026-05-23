@@ -519,25 +519,17 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
                           Expanded(
                             flex: 2,
                             child: ElevatedButton(
-                              onPressed: _isNearPatient()
-                                  ? () => context.go(
-                                      '/driver/pickup-confirm/${widget.requestId}')
-                                  : null,
+                              onPressed: () => context.go(
+                                  '/driver/pickup-confirm/${widget.requestId}'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.onlineGreen,
-                                disabledBackgroundColor:
-                                    Colors.grey.shade200,
                                 padding: const EdgeInsets.symmetric(
                                     vertical: 13),
                               ),
                               child: Text(
-                                _isNearPatient()
-                                    ? '✓ Confirm Pickup'
-                                    : 'Approaching...',
+                                '✓ Confirm Pickup',
                                 style: GoogleFonts.poppins(
-                                  color: _isNearPatient()
-                                      ? Colors.white
-                                      : Colors.grey.shade500,
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 13,
                                 ),
