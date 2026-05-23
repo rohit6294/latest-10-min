@@ -36,10 +36,11 @@ class FirestoreService {
       try {
         final position = await LocationService().getCurrentPosition();
         if (position != null) {
-          updates['location'] =
-              GeoPoint(position.latitude, position.longitude);
+          updates['location'] = GeoPoint(position.latitude, position.longitude);
           updates['geohash'] = LocationService.encodeGeohash(
-              position.latitude, position.longitude);
+            position.latitude,
+            position.longitude,
+          );
           updates['lastLocationUpdate'] = FieldValue.serverTimestamp();
         }
       } catch (_) {
@@ -48,12 +49,10 @@ class FirestoreService {
       }
     }
 
-    await _db.doc(FirestorePaths.driver(uid)).set(
-      updates,
-      SetOptions(merge: true),
-    );
+    await _db
+        .doc(FirestorePaths.driver(uid))
+        .set(updates, SetOptions(merge: true));
   }
-
 
   // ─── Hospital ─────────────────────────────────────────────────────────────
 
@@ -68,11 +67,9 @@ class FirestoreService {
       .snapshots()
       .map(HospitalModel.fromFirestore);
 
-  Future<void> setHospitalActive(String uid, bool isActive) =>
-      _db.doc(FirestorePaths.hospital(uid)).set(
-        {'isActive': isActive},
-        SetOptions(merge: true),
-      );
+  Future<void> setHospitalActive(String uid, bool isActive) => _db
+      .doc(FirestorePaths.hospital(uid))
+      .set({'isActive': isActive}, SetOptions(merge: true));
 
   /// Update hospital bed availability counts
   Future<void> updateHospitalBeds(
@@ -94,10 +91,9 @@ class FirestoreService {
     if (advancedBeds != null) updates['advancedBeds'] = advancedBeds;
     if (normalBeds != null) updates['normalBeds'] = normalBeds;
     if (updates.isNotEmpty) {
-      await _db.doc(FirestorePaths.hospital(hospitalId)).set(
-            updates,
-            SetOptions(merge: true),
-          );
+      await _db
+          .doc(FirestorePaths.hospital(hospitalId))
+          .set(updates, SetOptions(merge: true));
     }
   }
 
@@ -116,26 +112,29 @@ class FirestoreService {
         .map(HospitalModel.fromFirestore)
         .where((h) => h.location != null)
         .where((h) {
-      final dist = LocationService.distanceKm(
-        patientLocation.latitude,
-        patientLocation.longitude,
-        h.location!.latitude,
-        h.location!.longitude,
-      );
-      return dist <= radiusKm;
-    }).toList();
+          final dist = LocationService.distanceKm(
+            patientLocation.latitude,
+            patientLocation.longitude,
+            h.location!.latitude,
+            h.location!.longitude,
+          );
+          return dist <= radiusKm;
+        })
+        .toList();
 
     hospitals.sort((a, b) {
       final dA = LocationService.distanceKm(
-          patientLocation.latitude,
-          patientLocation.longitude,
-          a.location!.latitude,
-          a.location!.longitude);
+        patientLocation.latitude,
+        patientLocation.longitude,
+        a.location!.latitude,
+        a.location!.longitude,
+      );
       final dB = LocationService.distanceKm(
-          patientLocation.latitude,
-          patientLocation.longitude,
-          b.location!.latitude,
-          b.location!.longitude);
+        patientLocation.latitude,
+        patientLocation.longitude,
+        b.location!.latitude,
+        b.location!.longitude,
+      );
       return dA.compareTo(dB);
     });
 
@@ -159,28 +158,31 @@ class FirestoreService {
         .where((h) => h.location != null)
         .where((h) => h.availableBedsForType(ambulanceType) > 0)
         .where((h) {
-      final dist = LocationService.distanceKm(
-        patientLocation.latitude,
-        patientLocation.longitude,
-        h.location!.latitude,
-        h.location!.longitude,
-      );
-      return dist <= radiusKm;
-    }).toList();
+          final dist = LocationService.distanceKm(
+            patientLocation.latitude,
+            patientLocation.longitude,
+            h.location!.latitude,
+            h.location!.longitude,
+          );
+          return dist <= radiusKm;
+        })
+        .toList();
 
     hospitals.sort((a, b) {
       final ratingCompare = b.rating.compareTo(a.rating);
       if (ratingCompare != 0) return ratingCompare;
       final dA = LocationService.distanceKm(
-          patientLocation.latitude,
-          patientLocation.longitude,
-          a.location!.latitude,
-          a.location!.longitude);
+        patientLocation.latitude,
+        patientLocation.longitude,
+        a.location!.latitude,
+        a.location!.longitude,
+      );
       final dB = LocationService.distanceKm(
-          patientLocation.latitude,
-          patientLocation.longitude,
-          b.location!.latitude,
-          b.location!.longitude);
+        patientLocation.latitude,
+        patientLocation.longitude,
+        b.location!.latitude,
+        b.location!.longitude,
+      );
       return dA.compareTo(dB);
     });
 
@@ -190,8 +192,7 @@ class FirestoreService {
   // ─── Rescue Request ───────────────────────────────────────────────────────
 
   Future<RescueRequestModel?> getRequest(String requestId) async {
-    final doc =
-        await _db.doc(FirestorePaths.rescueRequest(requestId)).get();
+    final doc = await _db.doc(FirestorePaths.rescueRequest(requestId)).get();
     if (!doc.exists) return null;
     return RescueRequestModel.fromFirestore(doc);
   }
@@ -203,8 +204,7 @@ class FirestoreService {
 
   /// Driver accepts a request using a transaction to prevent race conditions.
   /// Returns true if this driver won, false if someone else already accepted.
-  Future<bool> driverAcceptRequest(
-      String requestId, String driverId) async {
+  Future<bool> driverAcceptRequest(String requestId, String driverId) async {
     bool accepted = false;
     await _db.runTransaction((tx) async {
       final ref = _db.doc(FirestorePaths.rescueRequest(requestId));
@@ -229,8 +229,7 @@ class FirestoreService {
   }
 
   /// Driver selects a hospital after pickup
-  Future<void> driverSelectHospital(
-      String requestId, String hospitalId) async {
+  Future<void> driverSelectHospital(String requestId, String hospitalId) async {
     await _db.doc(FirestorePaths.rescueRequest(requestId)).update({
       'assignedHospitalId': hospitalId,
       'hospitalChosenBy': 'driver',
@@ -239,11 +238,19 @@ class FirestoreService {
     });
   }
 
+  /// Mark a pending request as ignored/declined by this driver so it does not
+  /// reopen on the same device after navigation or app restart.
+  Future<void> ignorePendingRequest(String requestId, String driverId) async {
+    await _db.doc(FirestorePaths.rescueRequest(requestId)).set({
+      'declinedDriverIds': FieldValue.arrayUnion([driverId]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   /// Confirm patient pickup. Auto-assigns hospital if patient pre-selected,
   /// otherwise transitions to awaitingHospitalChoice.
   Future<void> confirmPatientPickup(String requestId) async {
-    final doc =
-        await _db.doc(FirestorePaths.rescueRequest(requestId)).get();
+    final doc = await _db.doc(FirestorePaths.rescueRequest(requestId)).get();
     final data = doc.data();
     final preferredHospitalId = data?['preferredHospitalId'] as String?;
 
@@ -263,19 +270,22 @@ class FirestoreService {
     }
   }
 
-  Future<void> markInTransit(String requestId) =>
-      _db.doc(FirestorePaths.rescueRequest(requestId)).update({
-        'status': RequestStatus.inTransit.value,
-      });
+  Future<void> markInTransit(String requestId) => _db
+      .doc(FirestorePaths.rescueRequest(requestId))
+      .update({'status': RequestStatus.inTransit.value});
 
   /// Driver cancels mid-trip (releases the request back to pool).
   /// Reason: emergency, vehicle breakdown, etc.
-  Future<void> cancelDriverTrip(String requestId, String driverId,
-      {String reason = 'driver_cancelled'}) async {
+  Future<void> cancelDriverTrip(
+    String requestId,
+    String driverId, {
+    String reason = 'driver_cancelled',
+  }) async {
     await _db.doc(FirestorePaths.rescueRequest(requestId)).update({
       'status': RequestStatus.pendingDriver.value,
       'assignedDriverId': null,
       'assignedDriverAcceptedAt': null,
+      'declinedDriverIds': FieldValue.arrayUnion([driverId]),
       'driverCancellationReason': reason,
       'driverCancelledAt': FieldValue.serverTimestamp(),
     });
@@ -287,18 +297,16 @@ class FirestoreService {
 
   /// Save FCM token on the driver's document
   Future<void> saveDriverFcmToken(String driverId, String token) async {
-    await _db.doc(FirestorePaths.driver(driverId)).set(
-          {'fcmToken': token},
-          SetOptions(merge: true),
-        );
+    await _db.doc(FirestorePaths.driver(driverId)).set({
+      'fcmToken': token,
+    }, SetOptions(merge: true));
   }
 
   /// Save FCM token on the hospital's document
   Future<void> saveHospitalFcmToken(String hospitalId, String token) async {
-    await _db.doc(FirestorePaths.hospital(hospitalId)).set(
-          {'fcmToken': token},
-          SetOptions(merge: true),
-        );
+    await _db.doc(FirestorePaths.hospital(hospitalId)).set({
+      'fcmToken': token,
+    }, SetOptions(merge: true));
   }
 
   /// Update driver profile fields (excludes things they shouldn't change like uid, verificationStatus)
@@ -315,10 +323,9 @@ class FirestoreService {
     if (vehicleNumber != null) updates['vehicleNumber'] = vehicleNumber;
     if (licenseNumber != null) updates['licenseNumber'] = licenseNumber;
     if (updates.isNotEmpty) {
-      await _db.doc(FirestorePaths.driver(uid)).set(
-            updates,
-            SetOptions(merge: true),
-          );
+      await _db
+          .doc(FirestorePaths.driver(uid))
+          .set(updates, SetOptions(merge: true));
     }
   }
 
@@ -331,17 +338,21 @@ class FirestoreService {
           .where('assignedDriverId', isEqualTo: driverId)
           .snapshots()
           .map((snap) {
-        final all = snap.docs.map(RescueRequestModel.fromFirestore).toList();
-        // Client-side filter: only completed/cancelled
-        final past = all
-            .where((r) =>
-                r.status == RequestStatus.completed ||
-                r.status == RequestStatus.cancelled)
-            .toList();
-        // Sort newest-first by createdAt
-        past.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return past.take(50).toList();
-      });
+            final all = snap.docs
+                .map(RescueRequestModel.fromFirestore)
+                .toList();
+            // Client-side filter: only completed/cancelled
+            final past = all
+                .where(
+                  (r) =>
+                      r.status == RequestStatus.completed ||
+                      r.status == RequestStatus.cancelled,
+                )
+                .toList();
+            // Sort newest-first by createdAt
+            past.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            return past.take(50).toList();
+          });
 
   Future<void> completeRide(String requestId, String driverId) async {
     // Freeing a hospital bed is handled server-side by the
@@ -357,7 +368,9 @@ class FirestoreService {
   }
 
   Future<void> completeHospitalReceive(
-      String requestId, String hospitalId) async {
+    String requestId,
+    String hospitalId,
+  ) async {
     await _db.doc(FirestorePaths.hospital(hospitalId)).update({
       'isActive': true,
       'currentRequestId': null,
@@ -366,37 +379,41 @@ class FirestoreService {
 
   // ─── Location Updates ─────────────────────────────────────────────────────
 
-  Stream<Map<String, dynamic>?> watchDriverLocation(String driverId) =>
-      _db.doc(FirestorePaths.locationUpdate(driverId)).snapshots().map(
-        (snap) => snap.exists ? snap.data() as Map<String, dynamic> : null,
-      );
+  Stream<Map<String, dynamic>?> watchDriverLocation(String driverId) => _db
+      .doc(FirestorePaths.locationUpdate(driverId))
+      .snapshots()
+      .map((snap) => snap.exists ? snap.data() as Map<String, dynamic> : null);
 
   // ─── Active request for driver ────────────────────────────────────────────
 
-  Stream<QuerySnapshot> watchActiveRequestForDriver(String driverId) =>
-      _db
-          .collection(FirestorePaths.rescueRequests)
-          .where('assignedDriverId', isEqualTo: driverId)
-          .where('status', whereIn: [
-            RequestStatus.driverAssigned.value,
-            RequestStatus.patientPickedUp.value,
-            RequestStatus.awaitingHospitalChoice.value,
-            RequestStatus.hospitalAssigned.value,
-            RequestStatus.inTransit.value,
-          ])
-          .snapshots();
+  Stream<QuerySnapshot> watchActiveRequestForDriver(String driverId) => _db
+      .collection(FirestorePaths.rescueRequests)
+      .where('assignedDriverId', isEqualTo: driverId)
+      .where(
+        'status',
+        whereIn: [
+          RequestStatus.driverAssigned.value,
+          RequestStatus.patientPickedUp.value,
+          RequestStatus.awaitingHospitalChoice.value,
+          RequestStatus.hospitalAssigned.value,
+          RequestStatus.inTransit.value,
+        ],
+      )
+      .snapshots();
 
   // ─── Active request for hospital ─────────────────────────────────────────
 
-  Stream<QuerySnapshot> watchActiveRequestForHospital(String hospitalId) =>
-      _db
-          .collection(FirestorePaths.rescueRequests)
-          .where('assignedHospitalId', isEqualTo: hospitalId)
-          .where('status', whereIn: [
-            RequestStatus.hospitalAssigned.value,
-            RequestStatus.inTransit.value,
-          ])
-          .snapshots();
+  Stream<QuerySnapshot> watchActiveRequestForHospital(String hospitalId) => _db
+      .collection(FirestorePaths.rescueRequests)
+      .where('assignedHospitalId', isEqualTo: hospitalId)
+      .where(
+        'status',
+        whereIn: [
+          RequestStatus.hospitalAssigned.value,
+          RequestStatus.inTransit.value,
+        ],
+      )
+      .snapshots();
 
   // ─── Pending requests ────────────────────────────────────────────────────
 
@@ -406,8 +423,7 @@ class FirestoreService {
       .collection(FirestorePaths.rescueRequests)
       .where('status', isEqualTo: RequestStatus.pendingDriver.value)
       .snapshots()
-      .map((snap) =>
-          snap.docs.map(RescueRequestModel.fromFirestore).toList());
+      .map((snap) => snap.docs.map(RescueRequestModel.fromFirestore).toList());
 
   // ─── SOS Requests ────────────────────────────────────────────────────────
 
@@ -415,8 +431,7 @@ class FirestoreService {
       .collection('sos_requests')
       .where('status', isEqualTo: 'pending')
       .snapshots()
-      .map((snap) =>
-          snap.docs.map(SosRequestModel.fromFirestore).toList());
+      .map((snap) => snap.docs.map(SosRequestModel.fromFirestore).toList());
 
   Future<void> acceptSosRequest(String sosId, String driverId) async {
     await _db.collection('sos_requests').doc(sosId).update({
@@ -424,10 +439,9 @@ class FirestoreService {
       'driverId': driverId,
       'assignedAt': FieldValue.serverTimestamp(),
     });
-    await _db.doc(FirestorePaths.driver(driverId)).set(
-      {'isAvailable': false},
-      SetOptions(merge: true),
-    );
+    await _db.doc(FirestorePaths.driver(driverId)).set({
+      'isAvailable': false,
+    }, SetOptions(merge: true));
   }
 
   Future<void> completeSosRequest(String sosId, String driverId) async {
@@ -435,10 +449,9 @@ class FirestoreService {
       'status': 'resolved',
       'resolvedAt': FieldValue.serverTimestamp(),
     });
-    await _db.doc(FirestorePaths.driver(driverId)).set(
-      {'isAvailable': true},
-      SetOptions(merge: true),
-    );
+    await _db.doc(FirestorePaths.driver(driverId)).set({
+      'isAvailable': true,
+    }, SetOptions(merge: true));
   }
 
   Stream<SosRequestModel?> watchAssignedSos(String driverId) => _db
@@ -446,12 +459,12 @@ class FirestoreService {
       .where('driverId', isEqualTo: driverId)
       .snapshots()
       .map((snap) {
-    final active = snap.docs
-        .map(SosRequestModel.fromFirestore)
-        .where((s) => s.status == 'assigned')
-        .toList();
-    return active.isEmpty ? null : active.first;
-  });
+        final active = snap.docs
+            .map(SosRequestModel.fromFirestore)
+            .where((s) => s.status == 'assigned')
+            .toList();
+        return active.isEmpty ? null : active.first;
+      });
 
   // ─── Callback Requests ───────────────────────────────────────────────────
 
@@ -459,8 +472,9 @@ class FirestoreService {
       .collection('callback_requests')
       .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((snap) =>
-          snap.docs.map(CallbackRequestModel.fromFirestore).toList());
+      .map(
+        (snap) => snap.docs.map(CallbackRequestModel.fromFirestore).toList(),
+      );
 
   Future<String> createCallbackRequest({
     required String patientName,
@@ -489,9 +503,7 @@ class FirestoreService {
     String? adminNote,
     String? convertedRequestId,
   }) async {
-    final updates = <String, dynamic>{
-      'status': status,
-    };
+    final updates = <String, dynamic>{'status': status};
     if (status == 'called') {
       updates['calledAt'] = FieldValue.serverTimestamp();
     }
@@ -526,14 +538,14 @@ class FirestoreService {
       'urgencyLevel': urgencyLevel.value,
       'emergencyDescription': emergencyDescription,
       'preferredHospitalId': preferredHospitalId,
-      'hospitalChosenBy':
-          preferredHospitalId != null ? 'patient' : '',
+      'hospitalChosenBy': preferredHospitalId != null ? 'patient' : '',
       'source': source,
       'status': RequestStatus.pendingDriver.value,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'currentDriverSearchRadius': 1,
       'notifiedDriverIds': [],
+      'declinedDriverIds': [],
       'assignedDriverId': null,
       'currentHospitalSearchRadius': 1,
       'notifiedHospitalIds': [],

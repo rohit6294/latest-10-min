@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -13,6 +14,7 @@ import '../../../core/services/location_service.dart';
 import '../../../core/services/routing_service.dart';
 import '../../../core/models/rescue_request_model.dart';
 import '../../../core/models/hospital_model.dart';
+import '../../../core/models/ambulance_type.dart';
 import '../../../core/constants/app_colors.dart';
 
 class NavigateToHospitalScreen extends StatefulWidget {
@@ -24,8 +26,7 @@ class NavigateToHospitalScreen extends StatefulWidget {
       _NavigateToHospitalScreenState();
 }
 
-class _NavigateToHospitalScreenState
-    extends State<NavigateToHospitalScreen> {
+class _NavigateToHospitalScreenState extends State<NavigateToHospitalScreen> {
   final _firestoreService = FirestoreService();
   final _locationService = LocationService();
   final _uid = FirebaseAuth.instance.currentUser!.uid;
@@ -155,8 +156,10 @@ class _NavigateToHospitalScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Cancel Trip?',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        title: Text(
+          'Cancel Trip?',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+        ),
         content: Text(
           'Patient is in your ambulance. Only cancel in true emergency. Dispatch will be notified.',
           style: GoogleFonts.poppins(fontSize: 13),
@@ -177,8 +180,11 @@ class _NavigateToHospitalScreenState
     if (confirmed != true) return;
     try {
       _locationService.stopTracking();
-      await _firestoreService.cancelDriverTrip(widget.requestId, _uid,
-          reason: 'driver_cancelled_in_transit');
+      await _firestoreService.cancelDriverTrip(
+        widget.requestId,
+        _uid,
+        reason: 'driver_cancelled_in_transit',
+      );
       if (mounted) context.go('/driver/home');
     } catch (e) {
       if (mounted) {
@@ -190,6 +196,211 @@ class _NavigateToHospitalScreenState
         );
       }
     }
+  }
+
+  Widget _bedTypePill(AmbulanceType type, HospitalModel hospital) {
+    Color color = type == AmbulanceType.A
+        ? AppColors.brandRed
+        : type == AmbulanceType.B
+        ? AppColors.warningAmber
+        : AppColors.onlineGreen;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => _changeBedTypeDialog(hospital, type),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.single_bed_rounded, color: color, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                'Bed: ${type.label}',
+                style: GoogleFonts.poppins(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(Icons.edit, color: color, size: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeBedTypeDialog(
+    HospitalModel hospital,
+    AmbulanceType currentType,
+  ) async {
+    final selectedType = await showDialog<AmbulanceType>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Select Bed Type Required',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: AppColors.navy,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _bedTypeOption(
+              context,
+              type: AmbulanceType.A,
+              label: 'ICU Bed (Type A)',
+              color: AppColors.brandRed,
+              available: hospital.icuAvailable,
+              total: hospital.icuBeds,
+            ),
+            const SizedBox(height: 10),
+            _bedTypeOption(
+              context,
+              type: AmbulanceType.B,
+              label: 'Advanced Bed (Type B)',
+              color: AppColors.warningAmber,
+              available: hospital.advancedAvailable,
+              total: hospital.advancedBeds,
+            ),
+            const SizedBox(height: 10),
+            _bedTypeOption(
+              context,
+              type: AmbulanceType.C,
+              label: 'Normal Bed (Type C)',
+              color: AppColors.onlineGreen,
+              available: hospital.normalAvailable,
+              total: hospital.normalBeds,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selectedType != null && selectedType != currentType) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('rescue_requests')
+            .doc(widget.requestId)
+            .update({'ambulanceType': selectedType.value});
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Bed type updated to ${selectedType.label}!'),
+            backgroundColor: AppColors.onlineGreen,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update bed type.'),
+            backgroundColor: AppColors.brandRed,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _bedTypeOption(
+    BuildContext context, {
+    required AmbulanceType type,
+    required String label,
+    required Color color,
+    required int available,
+    required int total,
+  }) {
+    final hasBeds = available > 0;
+    return Material(
+      color: hasBeds ? Colors.grey[50] : Colors.grey[100],
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: hasBeds ? () => Navigator.pop(context, type) : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: hasBeds ? const Color(0xFFEEF2F6) : Colors.transparent,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.single_bed_rounded, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: hasBeds ? AppColors.navy : AppColors.textLight,
+                      ),
+                    ),
+                    Text(
+                      '$available of $total beds available',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: hasBeds
+                            ? AppColors.textSecondary
+                            : AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!hasBeds)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.brandRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'FULL',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.brandRed,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 12,
+                  color: AppColors.textLight,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -215,9 +426,9 @@ class _NavigateToHospitalScreenState
 
           // Load hospital once when assignedHospitalId is available
           if (request.assignedHospitalId != null && _hospital == null) {
-            _firestoreService
-                .getHospital(request.assignedHospitalId!)
-                .then((h) {
+            _firestoreService.getHospital(request.assignedHospitalId!).then((
+              h,
+            ) {
               if (!mounted || h == null) return;
               setState(() => _hospital = h);
               if (h.location != null) {
@@ -232,10 +443,13 @@ class _NavigateToHospitalScreenState
           }
 
           final hospitalLatLng = _hospital?.location != null
-              ? LatLng(_hospital!.location!.latitude,
-                  _hospital!.location!.longitude)
+              ? LatLng(
+                  _hospital!.location!.latitude,
+                  _hospital!.location!.longitude,
+                )
               : null;
-          final initialCenter = hospitalLatLng ??
+          final initialCenter =
+              hospitalLatLng ??
               _driverLocation ??
               const LatLng(22.5726, 88.3639);
           final dist = _distanceKm();
@@ -288,21 +502,22 @@ class _NavigateToHospitalScreenState
                             decoration: BoxDecoration(
                               color: AppColors.onlineGreen,
                               shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: Colors.white, width: 3),
+                              border: Border.all(color: Colors.white, width: 3),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.onlineGreen
-                                      .withValues(alpha: 0.5),
+                                  color: AppColors.onlineGreen.withValues(
+                                    alpha: 0.5,
+                                  ),
                                   blurRadius: 12,
                                   spreadRadius: 4,
                                 ),
                               ],
                             ),
                             child: const Icon(
-                                Icons.local_hospital_rounded,
-                                color: Colors.white,
-                                size: 28),
+                              Icons.local_hospital_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                           ),
                         ),
                       if (_driverLocation != null)
@@ -315,20 +530,24 @@ class _NavigateToHospitalScreenState
                               color: AppColors.accentBlue,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                  color: Colors.white, width: 2.5),
+                                color: Colors.white,
+                                width: 2.5,
+                              ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.accentBlue
-                                      .withValues(alpha: 0.5),
+                                  color: AppColors.accentBlue.withValues(
+                                    alpha: 0.5,
+                                  ),
                                   blurRadius: 8,
                                   spreadRadius: 2,
                                 ),
                               ],
                             ),
                             child: const Icon(
-                                Icons.directions_car_rounded,
-                                color: Colors.white,
-                                size: 22),
+                              Icons.directions_car_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
                           ),
                         ),
                     ],
@@ -367,8 +586,11 @@ class _NavigateToHospitalScreenState
                           color: AppColors.onlineGreen,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.local_hospital_rounded,
-                            color: Colors.white, size: 20),
+                        child: const Icon(
+                          Icons.local_hospital_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -421,13 +643,15 @@ class _NavigateToHospitalScreenState
                   ),
                   decoration: const BoxDecoration(
                     color: Colors.white,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(24)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                          color: Color(0x33000000),
-                          blurRadius: 20,
-                          offset: Offset(0, -4)),
+                        color: Color(0x33000000),
+                        blurRadius: 20,
+                        offset: Offset(0, -4),
+                      ),
                     ],
                   ),
                   child: Column(
@@ -449,12 +673,15 @@ class _NavigateToHospitalScreenState
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: AppColors.onlineGreen
-                                    .withValues(alpha: 0.12),
+                                color: AppColors.onlineGreen.withValues(
+                                  alpha: 0.12,
+                                ),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Icon(Icons.local_hospital,
-                                  color: AppColors.onlineGreen),
+                              child: const Icon(
+                                Icons.local_hospital,
+                                color: AppColors.onlineGreen,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -476,8 +703,9 @@ class _NavigateToHospitalScreenState
                                         ? 'Address not set'
                                         : _hospital!.address,
                                     style: GoogleFonts.poppins(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 12),
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -492,6 +720,8 @@ class _NavigateToHospitalScreenState
                               ),
                           ],
                         ),
+                        const SizedBox(height: 10),
+                        _bedTypePill(request.ambulanceType, _hospital!),
                       ] else
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -532,16 +762,21 @@ class _NavigateToHospitalScreenState
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed:
-                                  _hospital != null ? _openGoogleMaps : null,
-                              icon: const Icon(Icons.navigation_rounded,
-                                  size: 18),
+                              onPressed: _hospital != null
+                                  ? _openGoogleMaps
+                                  : null,
+                              icon: const Icon(
+                                Icons.navigation_rounded,
+                                size: 18,
+                              ),
                               label: const Text('Maps'),
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
-                                    vertical: 13),
+                                  vertical: 13,
+                                ),
                                 side: const BorderSide(
-                                    color: AppColors.accentBlue),
+                                  color: AppColors.accentBlue,
+                                ),
                                 foregroundColor: AppColors.accentBlue,
                               ),
                             ),
@@ -550,24 +785,25 @@ class _NavigateToHospitalScreenState
                           Expanded(
                             flex: 2,
                             child: ElevatedButton(
-                              onPressed:
-                                  _hospital == null || _completing
-                                      ? null
-                                      : _completeRide,
+                              onPressed: _hospital == null || _completing
+                                  ? null
+                                  : _completeRide,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isNearHospital
                                     ? AppColors.onlineGreen
                                     : AppColors.brandRed,
                                 padding: const EdgeInsets.symmetric(
-                                    vertical: 13),
+                                  vertical: 13,
+                                ),
                               ),
                               child: _completing
                                   ? const SizedBox(
                                       width: 20,
                                       height: 20,
                                       child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2),
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
                                     )
                                   : Text(
                                       isNearHospital
@@ -586,8 +822,11 @@ class _NavigateToHospitalScreenState
                       const SizedBox(height: 8),
                       TextButton.icon(
                         onPressed: _confirmCancel,
-                        icon: const Icon(Icons.cancel_outlined,
-                            size: 16, color: AppColors.brandRed),
+                        icon: const Icon(
+                          Icons.cancel_outlined,
+                          size: 16,
+                          color: AppColors.brandRed,
+                        ),
                         label: Text(
                           'Cancel Trip',
                           style: GoogleFonts.poppins(

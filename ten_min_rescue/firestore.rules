@@ -118,7 +118,8 @@ service cloud.firestore {
           'patientPickedUpAt', 'awaitingHospitalChoiceAt',
           'assignedHospitalId', 'hospitalChosenBy',
           'assignedHospitalAcceptedAt', 'inTransitAt', 'completedAt',
-          'driverCancellationReason', 'driverCancelledAt', 'updatedAt'
+          'driverCancellationReason', 'driverCancelledAt', 'updatedAt',
+          'ambulanceType', 'declinedDriverIds'
         ]);
 
       // The receiving hospital can mark its own incoming request.

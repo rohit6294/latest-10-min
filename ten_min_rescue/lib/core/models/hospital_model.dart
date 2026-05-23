@@ -11,6 +11,7 @@ class HospitalModel {
   final GeoPoint? location;
   final String geohash;
   final List<String> specializations;
+  final List<String> facilities;
   final String? currentRequestId;
 
   // Bed availability per ambulance type
@@ -32,6 +33,7 @@ class HospitalModel {
     this.location,
     this.geohash = '',
     this.specializations = const [],
+    this.facilities = const [],
     this.currentRequestId,
     this.icuBeds = 0,
     this.icuAvailable = 0,
@@ -54,6 +56,7 @@ class HospitalModel {
       location: data['location'] as GeoPoint?,
       geohash: data['geohash'] ?? '',
       specializations: List<String>.from(data['specializations'] ?? []),
+      facilities: List<String>.from(data['facilities'] ?? []),
       currentRequestId: data['currentRequestId'],
       icuBeds: (data['icuBeds'] as num?)?.toInt() ?? 0,
       icuAvailable: (data['icuAvailable'] as num?)?.toInt() ?? 0,
@@ -66,24 +69,25 @@ class HospitalModel {
   }
 
   Map<String, dynamic> toFirestore() => {
-        'uid': uid,
-        'name': name,
-        'phone': phone,
-        'address': address,
-        'fcmToken': fcmToken,
-        'isActive': isActive,
-        if (location != null) 'location': location,
-        'geohash': geohash,
-        'specializations': specializations,
-        'currentRequestId': currentRequestId,
-        'icuBeds': icuBeds,
-        'icuAvailable': icuAvailable,
-        'advancedBeds': advancedBeds,
-        'advancedAvailable': advancedAvailable,
-        'normalBeds': normalBeds,
-        'normalAvailable': normalAvailable,
-        'rating': rating,
-      };
+    'uid': uid,
+    'name': name,
+    'phone': phone,
+    'address': address,
+    'fcmToken': fcmToken,
+    'isActive': isActive,
+    if (location != null) 'location': location,
+    'geohash': geohash,
+    'specializations': specializations,
+    'facilities': facilities,
+    'currentRequestId': currentRequestId,
+    'icuBeds': icuBeds,
+    'icuAvailable': icuAvailable,
+    'advancedBeds': advancedBeds,
+    'advancedAvailable': advancedAvailable,
+    'normalBeds': normalBeds,
+    'normalAvailable': normalAvailable,
+    'rating': rating,
+  };
 
   /// Returns available beds for the given ambulance type
   int availableBedsForType(AmbulanceType type) {
@@ -122,24 +126,25 @@ class HospitalModel {
     int? normalBeds,
     int? normalAvailable,
     double? rating,
-  }) =>
-      HospitalModel(
-        uid: uid,
-        name: name,
-        phone: phone,
-        address: address,
-        fcmToken: fcmToken ?? this.fcmToken,
-        isActive: isActive ?? this.isActive,
-        location: location ?? this.location,
-        geohash: geohash ?? this.geohash,
-        specializations: specializations,
-        currentRequestId: currentRequestId ?? this.currentRequestId,
-        icuBeds: icuBeds ?? this.icuBeds,
-        icuAvailable: icuAvailable ?? this.icuAvailable,
-        advancedBeds: advancedBeds ?? this.advancedBeds,
-        advancedAvailable: advancedAvailable ?? this.advancedAvailable,
-        normalBeds: normalBeds ?? this.normalBeds,
-        normalAvailable: normalAvailable ?? this.normalAvailable,
-        rating: rating ?? this.rating,
-      );
+    List<String>? facilities,
+  }) => HospitalModel(
+    uid: uid,
+    name: name,
+    phone: phone,
+    address: address,
+    fcmToken: fcmToken ?? this.fcmToken,
+    isActive: isActive ?? this.isActive,
+    location: location ?? this.location,
+    geohash: geohash ?? this.geohash,
+    specializations: specializations,
+    currentRequestId: currentRequestId ?? this.currentRequestId,
+    icuBeds: icuBeds ?? this.icuBeds,
+    icuAvailable: icuAvailable ?? this.icuAvailable,
+    advancedBeds: advancedBeds ?? this.advancedBeds,
+    advancedAvailable: advancedAvailable ?? this.advancedAvailable,
+    normalBeds: normalBeds ?? this.normalBeds,
+    normalAvailable: normalAvailable ?? this.normalAvailable,
+    rating: rating ?? this.rating,
+    facilities: facilities ?? this.facilities,
+  );
 }

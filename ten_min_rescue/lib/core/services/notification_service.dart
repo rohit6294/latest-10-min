@@ -46,9 +46,10 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
-    final android =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await android?.createNotificationChannel(
       const AndroidNotificationChannel(
         emergencyChannelId,
@@ -81,15 +82,22 @@ class NotificationService {
   static Future<void> requestPermission() async {
     await _plugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.requestNotificationsPermission();
     await _plugin
         .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>()
+          IOSFlutterLocalNotificationsPlugin
+        >()
         ?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
   static int _idFor(String requestId) => requestId.hashCode & 0x7fffffff;
+
+  static Future<void> dismissRequestNotification(String requestId) async {
+    if (requestId.isEmpty) return;
+    await _plugin.cancel(_idFor(requestId));
+  }
 
   /// Display — or, for a cancellation, dismiss — a notification built from
   /// an incoming FCM data message.
@@ -108,8 +116,9 @@ class NotificationService {
     final title = (data['title'] ?? '').isNotEmpty
         ? data['title']!
         : 'Emergency request';
-    final body =
-        (data['body'] ?? '').isNotEmpty ? data['body']! : 'Tap to respond';
+    final body = (data['body'] ?? '').isNotEmpty
+        ? data['body']!
+        : 'Tap to respond';
 
     final androidDetails = AndroidNotificationDetails(
       emergencyChannelId,
@@ -122,8 +131,7 @@ class NotificationService {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
-      vibrationPattern:
-          Int64List.fromList(<int>[0, 600, 300, 600, 300, 600]),
+      vibrationPattern: Int64List.fromList(<int>[0, 600, 300, 600, 300, 600]),
       audioAttributesUsage: AudioAttributesUsage.alarm,
       ticker: title,
       autoCancel: true,

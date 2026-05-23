@@ -27,7 +27,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   final _uid = FirebaseAuth.instance.currentUser!.uid;
   bool _loading = false;
 
-  final _dismissedRequestIds = <String>{};
   bool _navigating = false;
 
   Position? _currentPosition;
@@ -36,17 +35,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _gpsSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 20,
-      ),
-    ).listen(
-      (pos) {
-        if (mounted) setState(() => _currentPosition = pos);
-      },
-      onError: (_) {},
-    );
+    _gpsSub =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 20,
+          ),
+        ).listen((pos) {
+          if (mounted) setState(() => _currentPosition = pos);
+        }, onError: (_) {});
     // Register FCM token (best-effort, won't fail if user denies)
     FcmService.initForDriver(_uid);
   }
@@ -64,13 +61,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   }
 
   void _handlePendingRequests(
-      List<RescueRequestModel> requests, DriverModel driver) {
+    List<RescueRequestModel> requests,
+    DriverModel driver,
+  ) {
     if (_navigating) return;
 
     for (final req in requests) {
       // Filter by ambulance type
       if (req.ambulanceType != driver.ambulanceType) continue;
-      if (_dismissedRequestIds.contains(req.requestId)) continue;
+      if (req.declinedDriverIds.contains(_uid)) continue;
 
       if (_currentPosition != null) {
         final dist = LocationService.distanceKm(
@@ -82,7 +81,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         if (dist > 10) continue;
       }
 
-      _dismissedRequestIds.add(req.requestId);
       _navigating = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) context.go('/driver/request/${req.requestId}');
@@ -124,7 +122,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               final err = snapshot.error.toString();
-              final isPermission = err.contains('permission-denied') ||
+              final isPermission =
+                  err.contains('permission-denied') ||
                   err.contains('PERMISSION_DENIED');
               return _buildErrorState(
                 icon: isPermission
@@ -163,8 +162,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 final allSos = sosSnap.data ?? [];
                 // Filter SOS by driver's ambulance type
                 final sosList = allSos
-                    .where((s) =>
-                        s.ambulanceType == driver.ambulanceType.value)
+                    .where((s) => s.ambulanceType == driver.ambulanceType.value)
                     .toList();
 
                 return StreamBuilder<List<RescueRequestModel>>(
@@ -201,20 +199,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   const SizedBox(height: 16),
                   // SOS alert cards (priority)
                   if (sosList.isNotEmpty) ...[
-                    ...sosList.map((sos) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _SosAlertCard(
-                            sos: sos,
-                            driverPos: _currentPosition,
-                            onAccept: () async {
-                              await _firestoreService.acceptSosRequest(
-                                  sos.id, _uid);
-                              if (mounted) {
-                                context.go('/driver/sos/${sos.id}');
-                              }
-                            },
-                          ),
-                        )),
+                    ...sosList.map(
+                      (sos) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _SosAlertCard(
+                          sos: sos,
+                          driverPos: _currentPosition,
+                          onAccept: () async {
+                            await _firestoreService.acceptSosRequest(
+                              sos.id,
+                              _uid,
+                            );
+                            if (mounted) {
+                              context.go('/driver/sos/${sos.id}');
+                            }
+                          },
+                        ),
+                      ),
+                    ),
                   ],
                   // Hero status card
                   _buildStatusHero(driver),
@@ -241,7 +243,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       decoration: const BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       child: Row(
@@ -269,8 +275,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                       fontWeight: FontWeight.w800,
                     ),
                     children: const [
-                      TextSpan(text: '10Min', style: TextStyle(color: AppColors.navy)),
-                      TextSpan(text: 'Rescue', style: TextStyle(color: AppColors.brandRed)),
+                      TextSpan(
+                        text: '10Min',
+                        style: TextStyle(color: AppColors.navy),
+                      ),
+                      TextSpan(
+                        text: 'Rescue',
+                        style: TextStyle(color: AppColors.brandRed),
+                      ),
                     ],
                   ),
                 ),
@@ -320,8 +332,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                       color: AppColors.brandRed,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(Icons.emergency_rounded,
-                        color: Colors.white, size: 28),
+                    child: const Icon(
+                      Icons.emergency_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -461,8 +476,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
               ),
               // Ambulance type badge
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
@@ -483,10 +497,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             isOnline
                 ? 'Listening for emergencies...'
                 : 'Tap below to start receiving requests',
-            style: GoogleFonts.poppins(
-              color: Colors.white70,
-              fontSize: 13,
-            ),
+            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 16),
           // The big toggle button
@@ -621,14 +632,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => context
-            .go('/driver/navigate-patient/${driver.currentRequestId}'),
+        onTap: () =>
+            context.go('/driver/navigate-patient/${driver.currentRequestId}'),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-                color: AppColors.brandRed.withValues(alpha: 0.3)),
+              color: AppColors.brandRed.withValues(alpha: 0.3),
+            ),
           ),
           child: Row(
             children: [
@@ -639,8 +651,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   color: AppColors.brandRed,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.emergency_rounded,
-                    color: Colors.white, size: 22),
+                child: const Icon(
+                  Icons.emergency_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -665,8 +680,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_ios,
-                  color: AppColors.brandRed, size: 14),
+              const Icon(
+                Icons.arrow_forward_ios,
+                color: AppColors.brandRed,
+                size: 14,
+              ),
             ],
           ),
         ),
@@ -691,16 +709,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   color: AppColors.brandRed.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.cancel_rounded,
-                    color: AppColors.brandRed, size: 44),
+                child: const Icon(
+                  Icons.cancel_rounded,
+                  color: AppColors.brandRed,
+                  size: 44,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
                 'Documents Rejected',
                 style: GoogleFonts.poppins(
-                    color: AppColors.navy,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700),
+                  color: AppColors.navy,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
                 textAlign: TextAlign.center,
               ),
               if (driver.rejectionReason.isNotEmpty) ...[
@@ -711,15 +733,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                     color: AppColors.brandRed.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: AppColors.brandRed.withValues(alpha: 0.2)),
+                      color: AppColors.brandRed.withValues(alpha: 0.2),
+                    ),
                   ),
-                  child: Text(driver.rejectionReason,
-                      style: GoogleFonts.poppins(
-                        color: AppColors.brandRed,
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
-                      textAlign: TextAlign.center),
+                  child: Text(
+                    driver.rejectionReason,
+                    style: GoogleFonts.poppins(
+                      color: AppColors.brandRed,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
               const SizedBox(height: 24),
@@ -737,9 +762,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   await FirebaseAuth.instance.signOut();
                   if (mounted) context.go('/auth/login');
                 },
-                child: Text('Sign Out',
-                    style:
-                        GoogleFonts.poppins(color: AppColors.textSecondary)),
+                child: Text(
+                  'Sign Out',
+                  style: GoogleFonts.poppins(color: AppColors.textSecondary),
+                ),
               ),
             ],
           ),
@@ -763,8 +789,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   color: AppColors.warningAmber.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.access_time_rounded,
-                    color: AppColors.warningAmber, size: 44),
+                child: const Icon(
+                  Icons.access_time_rounded,
+                  color: AppColors.warningAmber,
+                  size: 44,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -815,20 +844,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             children: [
               Icon(icon, color: AppColors.brandRed, size: 56),
               const SizedBox(height: 16),
-              Text(title,
-                  style: GoogleFonts.poppins(
-                    color: AppColors.navy,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  textAlign: TextAlign.center),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  color: AppColors.navy,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 8),
-              Text(message,
-                  style: GoogleFonts.poppins(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                      height: 1.6),
-                  textAlign: TextAlign.center),
+              Text(
+                message,
+                style: GoogleFonts.poppins(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  height: 1.6,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () async {
@@ -945,8 +979,7 @@ class _SosAlertCardState extends State<_SosAlertCard>
   Widget build(BuildContext context) {
     final dist = _distKm;
     final urgencyColor = AppColors.urgencyColor(widget.sos.urgencyLevel);
-    final ambType =
-        AmbulanceTypeX.fromString(widget.sos.ambulanceType);
+    final ambType = AmbulanceTypeX.fromString(widget.sos.ambulanceType);
 
     return AnimatedBuilder(
       animation: _pulse,
@@ -959,14 +992,12 @@ class _SosAlertCardState extends State<_SosAlertCard>
           ),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color:
-                urgencyColor.withValues(alpha: 0.5 + _pulse.value * 0.3),
+            color: urgencyColor.withValues(alpha: 0.5 + _pulse.value * 0.3),
             width: 2,
           ),
           boxShadow: [
             BoxShadow(
-              color: urgencyColor
-                  .withValues(alpha: 0.15 + _pulse.value * 0.1),
+              color: urgencyColor.withValues(alpha: 0.15 + _pulse.value * 0.1),
               blurRadius: 16,
               spreadRadius: 2,
             ),
@@ -988,8 +1019,11 @@ class _SosAlertCardState extends State<_SosAlertCard>
                     color: AppColors.urgencyColor(widget.sos.urgencyLevel),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.emergency_rounded,
-                      color: Colors.white, size: 22),
+                  child: const Icon(
+                    Icons.emergency_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1001,8 +1035,9 @@ class _SosAlertCardState extends State<_SosAlertCard>
                           Text(
                             'EMERGENCY SOS',
                             style: GoogleFonts.poppins(
-                              color: AppColors
-                                  .urgencyColor(widget.sos.urgencyLevel),
+                              color: AppColors.urgencyColor(
+                                widget.sos.urgencyLevel,
+                              ),
                               fontWeight: FontWeight.w800,
                               fontSize: 13,
                               letterSpacing: 1,
@@ -1011,10 +1046,13 @@ class _SosAlertCardState extends State<_SosAlertCard>
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: AppColors
-                                  .urgencyColor(widget.sos.urgencyLevel),
+                              color: AppColors.urgencyColor(
+                                widget.sos.urgencyLevel,
+                              ),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -1033,7 +1071,9 @@ class _SosAlertCardState extends State<_SosAlertCard>
                             ? 'Customer needs immediate help!'
                             : widget.sos.emergencyDescription,
                         style: GoogleFonts.poppins(
-                            color: AppColors.textSecondary, fontSize: 11.5),
+                          color: AppColors.textSecondary,
+                          fontSize: 11.5,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1043,18 +1083,19 @@ class _SosAlertCardState extends State<_SosAlertCard>
                 if (dist != null)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppColors
-                          .urgencyColor(widget.sos.urgencyLevel)
-                          .withValues(alpha: 0.12),
+                      color: AppColors.urgencyColor(
+                        widget.sos.urgencyLevel,
+                      ).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       '${dist.toStringAsFixed(1)} km',
                       style: GoogleFonts.poppins(
-                        color: AppColors
-                            .urgencyColor(widget.sos.urgencyLevel),
+                        color: AppColors.urgencyColor(widget.sos.urgencyLevel),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -1073,15 +1114,18 @@ class _SosAlertCardState extends State<_SosAlertCard>
                         widget.onAccept();
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      AppColors.urgencyColor(widget.sos.urgencyLevel),
+                  backgroundColor: AppColors.urgencyColor(
+                    widget.sos.urgencyLevel,
+                  ),
                 ),
                 icon: _accepting
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2),
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const Icon(Icons.check_rounded),
                 label: Text(_accepting ? 'Accepting...' : 'Accept & Navigate'),

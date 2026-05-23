@@ -48,8 +48,9 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
 
       try {
         _driverPos = await Geolocator.getCurrentPosition(
-          locationSettings:
-              const LocationSettings(accuracy: LocationAccuracy.high),
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
         );
       } catch (_) {}
 
@@ -94,10 +95,164 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
       _showAll ? _allHospitals : _hospitalsWithBeds;
 
   Future<void> _selectHospital(HospitalModel hospital) async {
+    final selectedType = await showDialog<AmbulanceType>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Select Bed Type Required',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: AppColors.navy,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _bedTypeOption(
+              context,
+              type: AmbulanceType.A,
+              label: 'ICU Bed (Type A)',
+              color: AppColors.brandRed,
+              available: hospital.icuAvailable,
+              total: hospital.icuBeds,
+            ),
+            const SizedBox(height: 10),
+            _bedTypeOption(
+              context,
+              type: AmbulanceType.B,
+              label: 'Advanced Bed (Type B)',
+              color: AppColors.warningAmber,
+              available: hospital.advancedAvailable,
+              total: hospital.advancedBeds,
+            ),
+            const SizedBox(height: 10),
+            _bedTypeOption(
+              context,
+              type: AmbulanceType.C,
+              label: 'Normal Bed (Type C)',
+              color: AppColors.onlineGreen,
+              available: hospital.normalAvailable,
+              total: hospital.normalBeds,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selectedType != null) {
+      _confirmHospitalSelection(hospital, selectedType);
+    }
+  }
+
+  Widget _bedTypeOption(
+    BuildContext context, {
+    required AmbulanceType type,
+    required String label,
+    required Color color,
+    required int available,
+    required int total,
+  }) {
+    final hasBeds = available > 0;
+    return Material(
+      color: hasBeds ? Colors.grey[50] : Colors.grey[100],
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: hasBeds ? () => Navigator.pop(context, type) : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: hasBeds ? const Color(0xFFEEF2F6) : Colors.transparent,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.single_bed_rounded, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: hasBeds ? AppColors.navy : AppColors.textLight,
+                      ),
+                    ),
+                    Text(
+                      '$available of $total beds available',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: hasBeds
+                            ? AppColors.textSecondary
+                            : AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!hasBeds)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.brandRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'FULL',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.brandRed,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 12,
+                  color: AppColors.textLight,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmHospitalSelection(
+    HospitalModel hospital,
+    AmbulanceType bedType,
+  ) async {
     if (_selecting) return;
     setState(() => _selecting = true);
     try {
+      // 1. Update request's ambulanceType in Firestore
+      await FirebaseFirestore.instance
+          .collection('rescue_requests')
+          .doc(widget.requestId)
+          .update({'ambulanceType': bedType.value});
+
+      // 2. Complete hospital selection
       await _fs.driverSelectHospital(widget.requestId, hospital.uid);
+
       if (!mounted) return;
       context.go('/driver/navigate-hospital/${widget.requestId}');
     } catch (_) {
@@ -105,7 +260,7 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
         setState(() => _selecting = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to select hospital. Try again.'),
+            content: Text('Failed to select hospital/bed. Try again.'),
             backgroundColor: AppColors.brandRed,
           ),
         );
@@ -126,12 +281,13 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.brandRed))
+              child: CircularProgressIndicator(color: AppColors.brandRed),
+            )
           : _error != null
-              ? _buildError()
-              : _displayedHospitals.isEmpty
-                  ? _buildEmptyState()
-                  : _buildHospitalList(),
+          ? _buildError()
+          : _displayedHospitals.isEmpty
+          ? _buildEmptyState()
+          : _buildHospitalList(),
     );
   }
 
@@ -142,12 +298,17 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline,
-                color: AppColors.brandRed, size: 56),
+            const Icon(
+              Icons.error_outline,
+              color: AppColors.brandRed,
+              size: 56,
+            ),
             const SizedBox(height: 16),
-            Text(_error!,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(color: AppColors.navy)),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(color: AppColors.navy),
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () {
@@ -179,8 +340,11 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                 color: AppColors.warningAmber.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.local_hospital_outlined,
-                  color: AppColors.warningAmber, size: 40),
+              child: const Icon(
+                Icons.local_hospital_outlined,
+                color: AppColors.warningAmber,
+                size: 40,
+              ),
             ),
             const SizedBox(height: 20),
             Text(
@@ -229,7 +393,8 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
             color: AppColors.brandRed.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-                color: AppColors.brandRed.withValues(alpha: 0.2)),
+              color: AppColors.brandRed.withValues(alpha: 0.2),
+            ),
           ),
           child: Row(
             children: [
@@ -240,8 +405,11 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                   color: AppColors.brandRed,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.medical_services_rounded,
-                    color: Colors.white, size: 22),
+                child: const Icon(
+                  Icons.medical_services_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -259,8 +427,8 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                     Text(
                       showingAll
                           ? (hasBedMatches
-                              ? 'Showing ALL active hospitals'
-                              : 'No ${type.label} beds — showing all hospitals')
+                                ? 'Showing ALL active hospitals'
+                                : 'No ${type.label} beds — showing all hospitals')
                           : 'Hospitals with ${type.label} beds available',
                       style: GoogleFonts.poppins(
                         color: AppColors.textSecondary,
@@ -285,7 +453,9 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                     onTap: () => setState(() => _showAll = !_showAll),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: showingAll
                             ? AppColors.warningAmber.withValues(alpha: 0.12)
@@ -373,8 +543,11 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                       color: AppColors.accentBlue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.local_hospital,
-                        color: AppColors.accentBlue, size: 22),
+                    child: const Icon(
+                      Icons.local_hospital,
+                      color: AppColors.accentBlue,
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -404,8 +577,11 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                       ],
                     ),
                   ),
-                  Icon(Icons.arrow_forward_ios,
-                      color: AppColors.textLight, size: 14),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    color: AppColors.textLight,
+                    size: 14,
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -428,6 +604,35 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
                   ],
                 ],
               ),
+              if (hospital.facilities.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: hospital.facilities
+                      .map(
+                        (f) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.navy.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            f,
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              color: AppColors.navy,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -465,14 +670,26 @@ class _SelectHospitalScreenState extends State<SelectHospitalScreen> {
   Widget _bedBreakdown(HospitalModel hospital, AmbulanceType type) {
     return Row(
       children: [
-        _bedCell('ICU', hospital.icuAvailable, hospital.icuBeds,
-            type == AmbulanceType.A),
+        _bedCell(
+          'ICU',
+          hospital.icuAvailable,
+          hospital.icuBeds,
+          type == AmbulanceType.A,
+        ),
         const SizedBox(width: 8),
-        _bedCell('Advanced', hospital.advancedAvailable, hospital.advancedBeds,
-            type == AmbulanceType.B),
+        _bedCell(
+          'Advanced',
+          hospital.advancedAvailable,
+          hospital.advancedBeds,
+          type == AmbulanceType.B,
+        ),
         const SizedBox(width: 8),
-        _bedCell('Normal', hospital.normalAvailable, hospital.normalBeds,
-            type == AmbulanceType.C),
+        _bedCell(
+          'Normal',
+          hospital.normalAvailable,
+          hospital.normalBeds,
+          type == AmbulanceType.C,
+        ),
       ],
     );
   }

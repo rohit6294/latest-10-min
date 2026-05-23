@@ -1020,6 +1020,9 @@ function EditHospitalModal({ hospital, onClose }) {
   const [address, setAddress] = useState(hospital.address || '')
   const [latitude, setLatitude] = useState(hospital.location?.latitude || '')
   const [longitude, setLongitude] = useState(hospital.location?.longitude || '')
+  const [facilities, setFacilities] = useState(
+    Array.isArray(hospital.facilities) ? hospital.facilities.join(', ') : ''
+  )
   const [showMapPicker, setShowMapPicker] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -1030,6 +1033,10 @@ function EditHospitalModal({ hospital, onClose }) {
         name: name.trim(),
         phone: phone.trim(),
         address: address.trim(),
+        facilities: facilities
+          .split(',')
+          .map((f) => f.trim())
+          .filter((f) => f.length > 0),
       }
       if (latitude !== '' && longitude !== '') {
         updates.location = new GeoPoint(Number(latitude), Number(longitude))
@@ -1077,6 +1084,16 @@ function EditHospitalModal({ hospital, onClose }) {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Top 5 Facilities (comma-separated)</label>
+            <input
+              type="text"
+              value={facilities}
+              onChange={(e) => setFacilities(e.target.value)}
+              placeholder="e.g. Cardiac Care, Trauma Center, Pediatrics"
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
             />
           </div>
@@ -1583,6 +1600,7 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
   const [icuBeds, setIcuBeds] = useState(0)
   const [advancedBeds, setAdvancedBeds] = useState(0)
   const [normalBeds, setNormalBeds] = useState(0)
+  const [facilities, setFacilities] = useState('')
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState(null) // { success, message } or { error }
 
@@ -1590,6 +1608,7 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
     setEmail(''); setPassword(''); setDisplayName(''); setPhone('')
     setAddress(''); setContactPerson(''); setVehicleNumber('')
     setVehicleType('BLS'); setIcuBeds(0); setAdvancedBeds(0); setNormalBeds(0)
+    setFacilities('')
     setLocationCoords(null); setSelectedFleetId('')
   }
 
@@ -1607,6 +1626,7 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
           icuBeds: Number(icuBeds),
           advancedBeds: Number(advancedBeds),
           normalBeds: Number(normalBeds),
+          facilities: facilities.split(',').map(f => f.trim()).filter(f => f.length > 0),
           ...(locationCoords && { latitude: locationCoords.lat, longitude: locationCoords.lng }),
         }),
         ...(accountType === 'fleet' && { contactPerson: contactPerson || displayName, address }),
@@ -1774,6 +1794,12 @@ function CreateAccountTab({ drivers, hospitals, fleets }) {
                 <input type="number" min="0" value={normalBeds} onChange={e => setNormalBeds(e.target.value)}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-navy focus:outline-none focus:border-brand-red" />
               </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Top 5 Facilities (comma-separated)</label>
+              <input value={facilities} onChange={e => setFacilities(e.target.value)}
+                placeholder="e.g. Cardiac Care, Trauma Center, Pediatrics"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red" />
             </div>
           </div>
         )}

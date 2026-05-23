@@ -115,6 +115,7 @@ class RescueRequestModel {
   // Driver phase
   final int currentDriverSearchRadius;
   final List<String> notifiedDriverIds;
+  final List<String> declinedDriverIds;
   final String? assignedDriverId;
 
   // Hospital phase
@@ -138,6 +139,7 @@ class RescueRequestModel {
     this.source = 'app',
     this.currentDriverSearchRadius = 1,
     this.notifiedDriverIds = const [],
+    this.declinedDriverIds = const [],
     this.assignedDriverId,
     this.currentHospitalSearchRadius = 1,
     this.notifiedHospitalIds = const [],
@@ -154,46 +156,44 @@ class RescueRequestModel {
           data['patientLocation'] as GeoPoint? ?? const GeoPoint(0, 0),
       emergencyType: data['emergencyType'] ?? 'general',
       status: RequestStatusX.fromString(data['status'] ?? 'pending_driver'),
-      createdAt:
-          (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      ambulanceType:
-          AmbulanceTypeX.fromString(data['ambulanceType'] as String?),
-      urgencyLevel:
-          UrgencyLevelX.fromString(data['urgencyLevel'] as String?),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      ambulanceType: AmbulanceTypeX.fromString(
+        data['ambulanceType'] as String?,
+      ),
+      urgencyLevel: UrgencyLevelX.fromString(data['urgencyLevel'] as String?),
       emergencyDescription: data['emergencyDescription'] as String? ?? '',
       preferredHospitalId: data['preferredHospitalId'] as String?,
       hospitalChosenBy: data['hospitalChosenBy'] as String? ?? '',
       source: data['source'] as String? ?? 'app',
       currentDriverSearchRadius: data['currentDriverSearchRadius'] ?? 1,
-      notifiedDriverIds:
-          List<String>.from(data['notifiedDriverIds'] ?? []),
+      notifiedDriverIds: List<String>.from(data['notifiedDriverIds'] ?? []),
+      declinedDriverIds: List<String>.from(data['declinedDriverIds'] ?? []),
       assignedDriverId: data['assignedDriverId'],
-      currentHospitalSearchRadius:
-          data['currentHospitalSearchRadius'] ?? 1,
-      notifiedHospitalIds:
-          List<String>.from(data['notifiedHospitalIds'] ?? []),
+      currentHospitalSearchRadius: data['currentHospitalSearchRadius'] ?? 1,
+      notifiedHospitalIds: List<String>.from(data['notifiedHospitalIds'] ?? []),
       assignedHospitalId: data['assignedHospitalId'],
     );
   }
 
   Map<String, dynamic> toFirestore() => {
-        'patientName': patientName,
-        'patientPhone': patientPhone,
-        'patientLocation': patientLocation,
-        'emergencyType': emergencyType,
-        'status': status.value,
-        'createdAt': FieldValue.serverTimestamp(),
-        'ambulanceType': ambulanceType.value,
-        'urgencyLevel': urgencyLevel.value,
-        'emergencyDescription': emergencyDescription,
-        'preferredHospitalId': preferredHospitalId,
-        'hospitalChosenBy': hospitalChosenBy,
-        'source': source,
-        'currentDriverSearchRadius': currentDriverSearchRadius,
-        'notifiedDriverIds': notifiedDriverIds,
-        'assignedDriverId': assignedDriverId,
-        'currentHospitalSearchRadius': currentHospitalSearchRadius,
-        'notifiedHospitalIds': notifiedHospitalIds,
-        'assignedHospitalId': assignedHospitalId,
-      };
+    'patientName': patientName,
+    'patientPhone': patientPhone,
+    'patientLocation': patientLocation,
+    'emergencyType': emergencyType,
+    'status': status.value,
+    'createdAt': FieldValue.serverTimestamp(),
+    'ambulanceType': ambulanceType.value,
+    'urgencyLevel': urgencyLevel.value,
+    'emergencyDescription': emergencyDescription,
+    'preferredHospitalId': preferredHospitalId,
+    'hospitalChosenBy': hospitalChosenBy,
+    'source': source,
+    'currentDriverSearchRadius': currentDriverSearchRadius,
+    'notifiedDriverIds': notifiedDriverIds,
+    'declinedDriverIds': declinedDriverIds,
+    'assignedDriverId': assignedDriverId,
+    'currentHospitalSearchRadius': currentHospitalSearchRadius,
+    'notifiedHospitalIds': notifiedHospitalIds,
+    'assignedHospitalId': assignedHospitalId,
+  };
 }
