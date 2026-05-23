@@ -1,47 +1,111 @@
 const express = require('express')
 const { db, FieldValue, GeoPoint } = require('../lib/firebase')
 const { sendText, sendLocationRequest } = require('../lib/gupshup')
-const { findAndNotifyDrivers, scheduleDriverExpansion } = require('../lib/matching')
-const { getSession, setSession, clearSession } = require('../lib/whatsappSession')
+const {
+  findAndNotifyDrivers,
+  scheduleDriverExpansion,
+} = require('../lib/matching')
+const {
+  getSession,
+  setSession,
+  clearSession,
+} = require('../lib/whatsappSession')
 
 const router = express.Router()
 
-// ─── Ambulance catalog (must match SosPage.jsx TYPES) ──────────────────────
-//   A = ICU, B = Advanced, C = Normal
-// Menu numbers are 1=Normal, 2=Advanced, 3=ICU (least → most critical, easiest UX)
-
+// Ambulance catalog (must match SosPage.jsx TYPES)
+// A = ICU, B = Advanced, C = Normal
+// Menu numbers are 1=Normal, 2=Advanced, 3=ICU.
 const TYPES = {
-  C: { code: 'C', label: 'Normal Ambulance',   desc: 'Basic transport & first aid' },
-  B: { code: 'B', label: 'Advanced Ambulance', desc: 'Oxygen, defibrillator, monitoring' },
-  A: { code: 'A', label: 'ICU Ambulance',      desc: 'Ventilator, cardiac monitor, life support' },
+  C: { code: 'C', label: 'Normal Ambulance', desc: 'Basic transport & first aid' },
+  B: {
+    code: 'B',
+    label: 'Advanced Ambulance',
+    desc: 'Oxygen, defibrillator, monitoring',
+  },
+  A: {
+    code: 'A',
+    label: 'ICU Ambulance',
+    desc: 'Ventilator, cardiac monitor, life support',
+  },
 }
 const MENU_TO_TYPE = { '1': 'C', '2': 'B', '3': 'A' }
 
 const EMERGENCY_KEYWORDS = [
-  'sos', 'emergency', 'ambulance', 'accident', 'help', 'urgent',
-  'bachao', 'hi', 'hello', 'hey', 'start', 'menu',
+  'sos',
+  'emergency',
+  'ambulance',
+  'accident',
+  'help',
+  'urgent',
+  'bachao',
+  'hi',
+  'hello',
+  'hey',
+  'start',
+  'menu',
 ]
 
 const MENU_TEXT =
-  '🚨 *Suraksha Kavach — Emergency Ambulance*\n\n' +
+  '🚨 *Suraksha Kavach - Emergency Ambulance*\n\n' +
   'What type of ambulance do you need?\n\n' +
-  '1️⃣  *Normal*  — basic transport & first aid\n' +
-  '2️⃣  *Advanced* — oxygen, defibrillator\n' +
-  '3️⃣  *ICU* — ventilator, life support\n\n' +
+  '1️⃣  *Normal*  - basic transport & first aid\n' +
+  '2️⃣  *Advanced* - oxygen, defibrillator\n' +
+  '3️⃣  *ICU* - ventilator, life support\n\n' +
   'Reply with *1*, *2* or *3*.'
 
-const LOCATION_PROMPT_PREFIX = '📍 *Now share your live location* so we can dispatch the nearest ambulance.\n\nTap 📎 → Location → *Send your current location*'
+const LOCATION_PROMPT_PREFIX =
+  '📍 *Now share your live location* so we can dispatch the nearest ambulance.\n\n' +
+  'Tap 📎 -> Location -> *Send your current location*'
 
 const HELPLINE = '+91 78660 67136'
+const DEBUG_COLLECTION = 'whatsapp_webhook_events'
 
-function ackForType(typeCode) {
-  const t = TYPES[typeCode]
-  return `✅ *${t.label}* selected.\n\n${LOCATION_PROMPT_PREFIX}`
+function cleanForFirestore(value) {
+  if (value === undefined || value === null) return null
+  if (Array.isArray(value)) return value.map(cleanForFirestore)
+  if (typeof value === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = cleanForFirestore(v)
+    }
+    return out
+  }
+  return value
 }
 
-async function createRescueFromWhatsApp({ from, name, latitude, longitude, typeCode }) {
+function sessionSummary(session) {
+  if (!session) return null
+  return {
+    state: session.state || null,
+    selectedAmbulanceType: session.selectedAmbulanceType || null,
+    lastRequestId: session.lastRequestId || null,
+  }
+}
+
+async function updateDebugTrace(ref, patch) {
+  try {
+    await ref.set(cleanForFirestore(patch), { merge: true })
+  } catch (e) {
+    console.error('whatsapp debug trace write failed:', e)
+  }
+}
+
+function ackForType(typeCode) {
+  const type = TYPES[typeCode]
+  return `✅ *${type.label}* selected.\n\n${LOCATION_PROMPT_PREFIX}`
+}
+
+async function createRescueFromWhatsApp({
+  from,
+  name,
+  latitude,
+  longitude,
+  typeCode,
+}) {
   const type = TYPES[typeCode] || TYPES.C
   const ref = db.collection('rescue_requests').doc()
+
   await ref.set({
     requestId: ref.id,
     patientName: name || '',
@@ -49,10 +113,11 @@ async function createRescueFromWhatsApp({ from, name, latitude, longitude, typeC
     patientLocation: new GeoPoint(latitude, longitude),
     accuracy: null,
     mapsLink: `https://maps.google.com/?q=${latitude},${longitude}`,
-    emergencyType: `WhatsApp — ${type.label}`,
+    emergencyType: `WhatsApp - ${type.label}`,
     emergencyDescription: 'Incoming WhatsApp emergency request',
     ambulanceType: type.code,
-    urgencyLevel: type.code === 'A' ? 'critical' : type.code === 'B' ? 'serious' : 'moderate',
+    urgencyLevel:
+      type.code === 'A' ? 'critical' : type.code === 'B' ? 'serious' : 'moderate',
     preferredHospitalId: '',
     preferredHospitalName: '',
     preferredHospitalAddress: '',
@@ -84,26 +149,35 @@ async function createRescueFromWhatsApp({ from, name, latitude, longitude, typeC
 
 /**
  * Normalise a Gupshup inbound webhook payload.
+ * Expected v2 shape:
  *   { app, timestamp, version, type: 'message',
  *     payload: { id, source, type, payload: {...}, sender: {...} } }
  */
 function parseGupshup(body) {
   if (!body || body.type !== 'message' || !body.payload) return null
-  const p = body.payload
-  const from = p.source || p.sender?.phone
-  const senderName = p.sender?.name || ''
-  const kind = p.type
-  const inner = p.payload || {}
+
+  const payload = body.payload
+  const from = payload.source || payload.sender?.phone
+  const senderName = payload.sender?.name || ''
+  const kind = payload.type
+  const inner = payload.payload || {}
 
   if (kind === 'text') {
-    return { kind: 'text', from, name: senderName, text: String(inner.text || '') }
+    return {
+      kind: 'text',
+      from,
+      name: senderName,
+      text: String(inner.text || ''),
+    }
   }
+
   if (kind === 'location') {
     const lat = Number(inner.latitude)
     const lng = Number(inner.longitude)
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
     return { kind: 'location', from, name: senderName, lat, lng }
   }
+
   return { kind, from, name: senderName }
 }
 
@@ -113,16 +187,36 @@ function normaliseText(raw) {
 
 router.post('/webhook', async (req, res) => {
   // Always 200 to Gupshup so they don't retry on app errors.
+  const debugRef = db.collection(DEBUG_COLLECTION).doc()
+
   try {
+    await updateDebugTrace(debugRef, {
+      receivedAt: FieldValue.serverTimestamp(),
+      receivedAtMs: Date.now(),
+      status: 'received',
+      headers: {
+        userAgent: req.get('user-agent') || '',
+        contentType: req.get('content-type') || '',
+        xGupshupSignature: req.get('x-gupshup-signature') || '',
+      },
+      rawBody: req.body || null,
+    })
+
     const evt = parseGupshup(req.body)
+    await updateDebugTrace(debugRef, {
+      status: evt && evt.from ? 'parsed' : 'ignored',
+      parsedEvent: evt,
+    })
     if (!evt || !evt.from) return res.status(200).json({ status: 'ignored' })
 
     const session = await getSession(evt.from)
+    await updateDebugTrace(debugRef, {
+      eventFrom: evt.from,
+      eventKind: evt.kind,
+      sessionBefore: sessionSummary(session),
+    })
 
-    // ─── Location handler ─────────────────────────────────────────────────
     if (evt.kind === 'location') {
-      // Use selected type if any; otherwise default to Normal so the user
-      // is never blocked from getting help.
       const typeCode = session?.selectedAmbulanceType || 'C'
       const requestId = await createRescueFromWhatsApp({
         from: evt.from,
@@ -131,75 +225,169 @@ router.post('/webhook', async (req, res) => {
         longitude: evt.lng,
         typeCode,
       })
+
+      await updateDebugTrace(debugRef, {
+        action: 'create_rescue_request',
+        requestId,
+        selectedAmbulanceType: typeCode,
+      })
+
       await setSession(evt.from, {
         state: 'completed',
         selectedAmbulanceType: typeCode,
         lastRequestId: requestId,
       })
-      const t = TYPES[typeCode]
+
+      const type = TYPES[typeCode]
       await sendText(
         evt.from,
         `🚑 *Emergency confirmed*\n\n` +
-          `Type: *${t.label}*\n` +
+          `Type: *${type.label}*\n` +
           `Ref: *${requestId.slice(0, 8)}*\n\n` +
           `The nearest ambulance is being dispatched. You'll get updates here.\n\n` +
           `📞 Helpline: ${HELPLINE}`
       )
+
+      await updateDebugTrace(debugRef, {
+        status: 'ok',
+        replyType: 'emergency_confirmed',
+        sessionAfter: {
+          state: 'completed',
+          selectedAmbulanceType: typeCode,
+          lastRequestId: requestId,
+        },
+      })
+
       return res.status(200).json({ status: 'ok', requestId })
     }
 
-    // ─── Text handler ─────────────────────────────────────────────────────
     if (evt.kind === 'text') {
       const text = normaliseText(evt.text)
 
-      // 1) Direct number reply → pick type (works whether or not we already
-      //    showed the menu; user may type "2" first thing).
       if (MENU_TO_TYPE[text]) {
         const typeCode = MENU_TO_TYPE[text]
+
         await setSession(evt.from, {
           state: 'awaiting_location',
           selectedAmbulanceType: typeCode,
           lastRequestId: null,
         })
+
+        await updateDebugTrace(debugRef, {
+          action: 'select_ambulance_type',
+          normalizedText: text,
+          selectedAmbulanceType: typeCode,
+        })
+
         await sendText(evt.from, ackForType(typeCode))
         await sendLocationRequest(evt.from, LOCATION_PROMPT_PREFIX)
+
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          replyType: 'location_prompt_after_type_select',
+          sessionAfter: {
+            state: 'awaiting_location',
+            selectedAmbulanceType: typeCode,
+            lastRequestId: null,
+          },
+        })
+
         return res.status(200).json({ status: 'ok' })
       }
 
-      // 2) Explicit restart
       if (text === 'restart' || text === 'reset' || text === 'menu') {
         await clearSession(evt.from)
+
+        await updateDebugTrace(debugRef, {
+          action: 'restart_menu',
+          normalizedText: text,
+        })
+
         await sendText(evt.from, MENU_TEXT)
+
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          replyType: 'menu',
+          sessionAfter: { state: 'cleared' },
+        })
+
         return res.status(200).json({ status: 'ok' })
       }
 
-      // 3) Already waiting for location → re-prompt
       if (session?.state === 'awaiting_location') {
+        await updateDebugTrace(debugRef, {
+          action: 'reprompt_location',
+          normalizedText: text,
+        })
+
         await sendText(
           evt.from,
-          `📍 Please share your *live location* so we can dispatch the ambulance.\n\nTap 📎 → Location → *Send your current location*\n\n(Reply *menu* to change ambulance type.)`
+          '📍 Please share your *live location* so we can dispatch the ambulance.\n\n' +
+            'Tap 📎 -> Location -> *Send your current location*\n\n' +
+            '(Reply *menu* to change ambulance type.)'
         )
         await sendLocationRequest(evt.from, LOCATION_PROMPT_PREFIX)
+
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          replyType: 'location_reprompt',
+        })
+
         return res.status(200).json({ status: 'ok' })
       }
 
-      // 4) Default for any other text: show menu.
-      //    Covers emergency keywords, gibberish, "hi", "help", etc.
-      const _isKeyword = EMERGENCY_KEYWORDS.some((k) => text.includes(k))
-      await setSession(evt.from, { state: 'awaiting_type', selectedAmbulanceType: null })
+      const isKeyword = EMERGENCY_KEYWORDS.some((k) => text.includes(k))
+      await setSession(evt.from, {
+        state: 'awaiting_type',
+        selectedAmbulanceType: null,
+      })
+
+      await updateDebugTrace(debugRef, {
+        action: 'show_menu',
+        normalizedText: text,
+        matchedEmergencyKeyword: isKeyword,
+      })
+
       await sendText(evt.from, MENU_TEXT)
+
+      await updateDebugTrace(debugRef, {
+        status: 'ok',
+        replyType: 'menu',
+        sessionAfter: {
+          state: 'awaiting_type',
+          selectedAmbulanceType: null,
+          lastRequestId: null,
+        },
+      })
+
       return res.status(200).json({ status: 'ok' })
     }
 
-    // ─── Other inbound types (image, audio, etc.) ─────────────────────────
+    await updateDebugTrace(debugRef, {
+      action: 'fallback_other_message_type',
+    })
+
     await sendText(
       evt.from,
-      `🙏 Suraksha Kavach — emergency ambulance.\n\nReply *menu* to start, or share your location to request help.\n\n📞 ${HELPLINE}`
+      '🙏 Suraksha Kavach - emergency ambulance.\n\n' +
+        'Reply *menu* to start, or share your location to request help.\n\n' +
+        `📞 ${HELPLINE}`
     )
-    res.status(200).json({ status: 'ok' })
+
+    await updateDebugTrace(debugRef, {
+      status: 'ok',
+      replyType: 'fallback',
+    })
+
+    return res.status(200).json({ status: 'ok' })
   } catch (e) {
     console.error('whatsapp webhook error:', e)
-    res.status(200).json({ status: 'error', message: e.message })
+    await updateDebugTrace(debugRef, {
+      status: 'error',
+      errorName: e.name || 'Error',
+      errorMessage: e.message || 'Unknown error',
+    })
+    return res.status(200).json({ status: 'error', message: e.message })
   }
 })
 
