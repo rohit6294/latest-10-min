@@ -5,7 +5,9 @@ import '../../../core/services/firestore_service.dart';
 import '../../../core/constants/app_colors.dart';
 
 class PatientReceivedScreen extends StatelessWidget {
-  const PatientReceivedScreen({super.key});
+  final String requestId;
+
+  const PatientReceivedScreen({super.key, required this.requestId});
 
   @override
   Widget build(BuildContext context) {
@@ -24,24 +26,29 @@ class PatientReceivedScreen extends StatelessWidget {
                   color: AppColors.onlineGreen.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.local_hospital_rounded,
-                    color: AppColors.onlineGreen, size: 64),
+                child: const Icon(
+                  Icons.local_hospital_rounded,
+                  color: AppColors.onlineGreen,
+                  size: 64,
+                ),
               ),
               const SizedBox(height: 32),
               const Text(
                 'Patient Received!',
                 style: TextStyle(
-                    color: AppColors.navy,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold),
+                  color: AppColors.navy,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               const Text(
                 'The patient has been successfully received. Please proceed with the medical intake process.',
                 style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 15,
-                    height: 1.5),
+                  color: AppColors.textSecondary,
+                  fontSize: 15,
+                  height: 1.5,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
@@ -51,7 +58,10 @@ class PatientReceivedScreen extends StatelessWidget {
                   onPressed: () async {
                     final uid = FirebaseAuth.instance.currentUser?.uid;
                     if (uid != null) {
-                      await FirestoreService().completeHospitalReceive('', uid);
+                      await FirestoreService().completeHospitalReceive(
+                        requestId,
+                        uid,
+                      );
                     }
                     if (context.mounted) context.go('/hospital/home');
                   },
@@ -65,9 +75,10 @@ class PatientReceivedScreen extends StatelessWidget {
                   child: const Text(
                     'Back to Home',
                     style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/driver_model.dart';
 import '../models/hospital_model.dart';
 import '../models/rescue_request_model.dart';
@@ -6,10 +7,26 @@ import '../models/sos_request_model.dart';
 import '../models/callback_request_model.dart';
 import '../models/ambulance_type.dart';
 import '../constants/firestore_paths.dart';
+import 'backend_service.dart';
 import 'location_service.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final BackendService _backendService = BackendService();
+
+  Future<void> _notifyWhatsappEventBestEffort(
+    String requestId,
+    String eventType,
+  ) async {
+    try {
+      await _backendService.notifyWhatsappRequestEvent(
+        requestId: requestId,
+        eventType: eventType,
+      );
+    } catch (e) {
+      debugPrint('WhatsApp notify failed for $eventType ($requestId): $e');
+    }
+  }
 
   // ─── Driver ───────────────────────────────────────────────────────────────
 
@@ -224,6 +241,7 @@ class FirestoreService {
         'isAvailable': false,
         'currentRequestId': requestId,
       });
+      await _notifyWhatsappEventBestEffort(requestId, 'driver_assigned');
     }
     return accepted;
   }
@@ -236,6 +254,7 @@ class FirestoreService {
       'status': RequestStatus.hospitalAssigned.value,
       'assignedHospitalAcceptedAt': FieldValue.serverTimestamp(),
     });
+    await _notifyWhatsappEventBestEffort(requestId, 'hospital_selected');
   }
 
   /// Mark a pending request as ignored/declined by this driver so it does not
@@ -253,8 +272,10 @@ class FirestoreService {
     final doc = await _db.doc(FirestorePaths.rescueRequest(requestId)).get();
     final data = doc.data();
     final preferredHospitalId = data?['preferredHospitalId'] as String?;
+    final hasPreferredHospital =
+        preferredHospitalId != null && preferredHospitalId.isNotEmpty;
 
-    if (preferredHospitalId != null && preferredHospitalId.isNotEmpty) {
+    if (hasPreferredHospital) {
       await _db.doc(FirestorePaths.rescueRequest(requestId)).update({
         'status': RequestStatus.hospitalAssigned.value,
         'patientPickedUpAt': FieldValue.serverTimestamp(),
@@ -267,6 +288,11 @@ class FirestoreService {
         'status': RequestStatus.awaitingHospitalChoice.value,
         'patientPickedUpAt': FieldValue.serverTimestamp(),
       });
+    }
+
+    await _notifyWhatsappEventBestEffort(requestId, 'ambulance_arrived');
+    if (hasPreferredHospital) {
+      await _notifyWhatsappEventBestEffort(requestId, 'hospital_selected');
     }
   }
 
@@ -365,6 +391,7 @@ class FirestoreService {
       'isAvailable': true,
       'currentRequestId': null,
     });
+    await _notifyWhatsappEventBestEffort(requestId, 'hospital_arrived');
   }
 
   Future<void> completeHospitalReceive(
@@ -375,6 +402,15 @@ class FirestoreService {
       'isActive': true,
       'currentRequestId': null,
     });
+    if (requestId.isNotEmpty) {
+      await _db.doc(FirestorePaths.rescueRequest(requestId)).update({
+        'patientReceivedAt': FieldValue.serverTimestamp(),
+        'hospitalAckAt': FieldValue.serverTimestamp(),
+        'hospitalAckBy': hospitalId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await _notifyWhatsappEventBestEffort(requestId, 'mission_completed');
+    }
   }
 
   // ─── Location Updates ─────────────────────────────────────────────────────

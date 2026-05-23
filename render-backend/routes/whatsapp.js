@@ -1,6 +1,7 @@
 const express = require('express')
 const { db, FieldValue, GeoPoint } = require('../lib/firebase')
 const { sendText, sendLocationRequest } = require('../lib/gupshup')
+const { requireAuth } = require('../lib/authGuard')
 const {
   findAndNotifyDrivers,
   scheduleDriverExpansion,
@@ -60,6 +61,17 @@ const LOCATION_PROMPT_PREFIX =
 
 const HELPLINE = '+91 78660 67136'
 const DEBUG_COLLECTION = 'whatsapp_webhook_events'
+const PUBLIC_APP_URL = (
+  process.env.PUBLIC_APP_URL ||
+  'https://min-rescue.web.app'
+).replace(/\/+$/, '')
+const WHATSAPP_EVENT_TYPES = new Set([
+  'driver_assigned',
+  'ambulance_arrived',
+  'hospital_selected',
+  'hospital_arrived',
+  'mission_completed',
+])
 
 function cleanForFirestore(value) {
   if (value === undefined || value === null) return null
@@ -101,6 +113,148 @@ async function updateDebugTrace(ref, patch) {
 function ackForType(typeCode) {
   const type = TYPES[typeCode]
   return `✅ *${type.label}* selected.\n\n${LOCATION_PROMPT_PREFIX}`
+}
+
+function normalizePhoneForWhatsApp(raw) {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.length === 10) return `91${digits}`
+  if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`
+  return digits
+}
+
+function trackUrl(requestId) {
+  return `${PUBLIC_APP_URL}/track/${encodeURIComponent(requestId)}`
+}
+
+function ambulanceTypeLabel(typeCode) {
+  return (TYPES[typeCode] || TYPES.C).label
+}
+
+async function loadRequestContext(requestId) {
+  const requestRef = db.collection('rescue_requests').doc(requestId)
+  const requestSnap = await requestRef.get()
+  if (!requestSnap.exists) {
+    const err = new Error('request not found')
+    err.status = 404
+    throw err
+  }
+
+  const request = requestSnap.data()
+  const [driverSnap, hospitalSnap] = await Promise.all([
+    request.assignedDriverId
+      ? db.collection('drivers').doc(request.assignedDriverId).get()
+      : null,
+    request.assignedHospitalId
+      ? db.collection('hospitals').doc(request.assignedHospitalId).get()
+      : null,
+  ])
+
+  return {
+    requestRef,
+    request,
+    driver: driverSnap?.exists ? driverSnap.data() : null,
+    hospital: hospitalSnap?.exists ? hospitalSnap.data() : null,
+  }
+}
+
+function assertCanSendRequestEvent({ eventType, callerUid, request }) {
+  const driverEvents = new Set([
+    'driver_assigned',
+    'ambulance_arrived',
+    'hospital_selected',
+    'hospital_arrived',
+  ])
+
+  if (driverEvents.has(eventType)) {
+    if (!request.assignedDriverId || request.assignedDriverId !== callerUid) {
+      const err = new Error('Only the assigned driver can send this update.')
+      err.status = 403
+      throw err
+    }
+    return
+  }
+
+  if (eventType === 'mission_completed') {
+    if (!request.assignedHospitalId || request.assignedHospitalId !== callerUid) {
+      const err = new Error('Only the assigned hospital can send this update.')
+      err.status = 403
+      throw err
+    }
+  }
+}
+
+function buildRequestEventMessages({
+  eventType,
+  requestId,
+  request,
+  driver,
+  hospital,
+}) {
+  const driverName = driver?.name || 'the ambulance driver'
+  const driverPhone = driver?.phone ? `\nDriver phone: ${driver.phone}` : ''
+  const vehicleNumber = driver?.vehicleNumber
+    ? `\nVehicle: ${driver.vehicleNumber}`
+    : ''
+  const hospitalName =
+    hospital?.name || request.hospitalName || request.preferredHospitalName || 'the selected hospital'
+  const hospitalAddress = hospital?.address || request.hospitalAddress || request.preferredHospitalAddress || ''
+  const hospitalAddressLine = hospitalAddress ? `\nAddress: ${hospitalAddress}` : ''
+  const trackLine = `\nTrack live: ${trackUrl(requestId)}`
+  const bedLabel = ambulanceTypeLabel(request.ambulanceType)
+
+  switch (eventType) {
+    case 'driver_assigned':
+      return [
+        `🚑 Driver accepted your emergency request.\n\nDriver: ${driverName}${driverPhone}${vehicleNumber}${trackLine}\n\nPlease keep your phone reachable.\n📞 Helpline: ${HELPLINE}`,
+      ]
+    case 'ambulance_arrived':
+      return [
+        `📍 Your ambulance has arrived at your location.\n\nDriver: ${driverName}${driverPhone}${trackLine}\n\nPlease meet the crew or answer their call.\n📞 Helpline: ${HELPLINE}`,
+      ]
+    case 'hospital_selected':
+      return [
+        `🏥 Hospital selected for your transfer.\n\nHospital: ${hospitalName}${hospitalAddressLine}\nBed requested: ${bedLabel}${trackLine}\n\nThe ambulance is now proceeding to the hospital.\n📞 Helpline: ${HELPLINE}`,
+      ]
+    case 'hospital_arrived':
+      return [
+        `🏥 The ambulance has arrived at ${hospitalName}.\n\nThe hospital team is receiving the patient now.${trackLine}\n📞 Helpline: ${HELPLINE}`,
+      ]
+    case 'mission_completed':
+      return [
+        `✅ Mission complete.\n\nThe patient has been handed over at ${hospitalName}.\nThank you for using Suraksha Kavach.\n📞 Helpline: ${HELPLINE}`,
+      ]
+    default:
+      return []
+  }
+}
+
+async function applyHospitalProjection({
+  requestRef,
+  requestId,
+  hospitalId,
+  hospital,
+}) {
+  if (!hospitalId || !hospital) return
+
+  await Promise.all([
+    requestRef.set(
+      {
+        hospitalName: hospital.name || '',
+        hospitalAddress: hospital.address || '',
+        hospitalPhone: hospital.phone || '',
+        hospitalLocation: hospital.location || null,
+        hospitalNotifiedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    ),
+    db.doc(`hospitals/${hospitalId}`).set(
+      {
+        currentRequestId: requestId,
+      },
+      { merge: true }
+    ),
+  ])
 }
 
 async function createRescueFromWhatsApp({
@@ -399,5 +553,85 @@ router.post('/webhook', async (req, res) => {
 })
 
 router.get('/webhook', (req, res) => res.status(200).send('OK'))
+
+router.post('/request-event', async (req, res) => {
+  let decoded
+  try {
+    decoded = await requireAuth(req)
+  } catch (e) {
+    return res.status(e.status || 401).json({ error: e.message })
+  }
+
+  const { requestId, eventType } = req.body || {}
+  if (!requestId || !eventType) {
+    return res
+      .status(400)
+      .json({ error: 'requestId and eventType are required.' })
+  }
+  if (!WHATSAPP_EVENT_TYPES.has(eventType)) {
+    return res.status(400).json({ error: 'Unsupported eventType.' })
+  }
+
+  try {
+    const ctx = await loadRequestContext(requestId)
+    const { requestRef, request, driver, hospital } = ctx
+
+    assertCanSendRequestEvent({
+      eventType,
+      callerUid: decoded.uid,
+      request,
+    })
+
+    const alreadySent = Array.isArray(request.whatsappNotifiedEvents)
+      ? request.whatsappNotifiedEvents.includes(eventType)
+      : false
+    if (alreadySent) {
+      return res.json({ ok: true, skipped: true, reason: 'already_sent' })
+    }
+
+    const destination = normalizePhoneForWhatsApp(request.patientPhone)
+    if (!destination) {
+      return res.json({ ok: true, skipped: true, reason: 'no_patient_phone' })
+    }
+
+    if (eventType === 'hospital_selected' && request.assignedHospitalId && hospital) {
+      await applyHospitalProjection({
+        requestRef,
+        requestId,
+        hospitalId: request.assignedHospitalId,
+        hospital,
+      })
+    }
+
+    const messages = buildRequestEventMessages({
+      eventType,
+      requestId,
+      request,
+      driver,
+      hospital,
+    })
+
+    if (messages.length === 0) {
+      return res.json({ ok: true, skipped: true, reason: 'no_message' })
+    }
+
+    for (const message of messages) {
+      await sendText(destination, message)
+    }
+
+    await requestRef.set(
+      {
+        whatsappNotifiedEvents: FieldValue.arrayUnion(eventType),
+        whatsappLastNotifiedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    )
+
+    return res.json({ ok: true, sent: messages.length })
+  } catch (e) {
+    console.error('whatsapp request-event error:', e)
+    return res.status(e.status || 500).json({ error: e.message })
+  }
+})
 
 module.exports = router

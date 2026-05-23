@@ -30,7 +30,8 @@ class AppRouter {
     redirect: (context, state) {
       final isLoggedIn = FirebaseAuth.instance.currentUser != null;
       final loc = state.matchedLocation;
-      final isAuthRoute = loc == '/splash' ||
+      final isAuthRoute =
+          loc == '/splash' ||
           loc.startsWith('/auth/') ||
           loc == '/driver/upload-docs' ||
           loc.startsWith('/driver/sos/') ||
@@ -39,16 +40,10 @@ class AppRouter {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/splash',
-        builder: (_, __) => const SplashScreen(),
-      ),
+      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
 
       // ── Auth ──────────────────────────────────────────────────────────────
-      GoRoute(
-        path: '/auth/login',
-        builder: (_, __) => const LoginScreen(),
-      ),
+      GoRoute(path: '/auth/login', builder: (_, __) => const LoginScreen()),
       GoRoute(
         path: '/auth/register',
         builder: (_, __) => const RegisterScreen(),
@@ -83,9 +78,8 @@ class AppRouter {
       ),
       GoRoute(
         path: '/driver/select-hospital/:requestId',
-        builder: (_, state) => SelectHospitalScreen(
-          requestId: state.pathParameters['requestId']!,
-        ),
+        builder: (_, state) =>
+            SelectHospitalScreen(requestId: state.pathParameters['requestId']!),
       ),
       GoRoute(
         path: '/driver/navigate-hospital/:requestId',
@@ -99,9 +93,8 @@ class AppRouter {
       ),
       GoRoute(
         path: '/driver/sos/:sosId',
-        builder: (_, state) => SosActiveScreen(
-          sosId: state.pathParameters['sosId']!,
-        ),
+        builder: (_, state) =>
+            SosActiveScreen(sosId: state.pathParameters['sosId']!),
       ),
       GoRoute(
         path: '/driver/profile',
@@ -125,9 +118,8 @@ class AppRouter {
       ),
       GoRoute(
         path: '/hospital/track/:requestId',
-        builder: (_, state) => TrackAmbulanceScreen(
-          requestId: state.pathParameters['requestId']!,
-        ),
+        builder: (_, state) =>
+            TrackAmbulanceScreen(requestId: state.pathParameters['requestId']!),
       ),
       GoRoute(
         path: '/hospital/checklist/:requestId',
@@ -136,13 +128,14 @@ class AppRouter {
         ),
       ),
       GoRoute(
-        path: '/hospital/received',
-        builder: (_, __) => const PatientReceivedScreen(),
+        path: '/hospital/received/:requestId',
+        builder: (_, state) => PatientReceivedScreen(
+          requestId: state.pathParameters['requestId']!,
+        ),
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(child: Text('Page not found: ${state.error}')),
-    ),
+    errorBuilder: (context, state) =>
+        Scaffold(body: Center(child: Text('Page not found: ${state.error}'))),
   );
 }
 

@@ -33,8 +33,10 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
             onPressed: () =>
                 context.go('/hospital/checklist/${widget.requestId}'),
             icon: const Icon(Icons.checklist, color: Colors.white70, size: 18),
-            label: const Text('Checklist',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
+            label: const Text(
+              'Checklist',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -43,7 +45,8 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
         builder: (context, reqSnap) {
           if (!reqSnap.hasData) {
             return const Center(
-                child: CircularProgressIndicator(color: AppColors.emergency));
+              child: CircularProgressIndicator(color: AppColors.emergency),
+            );
           }
           final request = reqSnap.data!;
           _assignedDriverId = request.assignedDriverId;
@@ -51,7 +54,7 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
           // Auto-navigate on completion
           if (request.status == RequestStatus.completed) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) context.go('/hospital/received');
+              if (mounted) context.go('/hospital/received/${widget.requestId}');
             });
           }
 
@@ -69,14 +72,12 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
                 final loc = locSnap.data!;
                 final geoPoint = loc['location'];
                 if (geoPoint != null) {
-                  final newLoc =
-                      LatLng(geoPoint.latitude, geoPoint.longitude);
+                  final newLoc = LatLng(geoPoint.latitude, geoPoint.longitude);
                   if (_ambulanceLocation != newLoc) {
                     _ambulanceLocation = newLoc;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) {
-                        _mapController.move(
-                            newLoc, _mapController.camera.zoom);
+                        _mapController.move(newLoc, _mapController.camera.zoom);
                       }
                     });
                   }
@@ -99,8 +100,7 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
                         TileLayer(
                           urlTemplate:
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName:
-                              'com.tenminrescue.ten_min_res',
+                          userAgentPackageName: 'com.tenminrescue.ten_min_res',
                         ),
                         MarkerLayer(
                           markers: [
@@ -141,7 +141,9 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
                         // Status badge
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.onlineGreen.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
@@ -172,28 +174,36 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(Icons.person_outline,
-                                color: AppColors.textSecondary, size: 16),
+                            const Icon(
+                              Icons.person_outline,
+                              color: AppColors.textSecondary,
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               'Patient: ${request.patientName}',
                               style: const TextStyle(
-                                  color: AppColors.navy,
-                                  fontWeight: FontWeight.w600),
+                                color: AppColors.navy,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.emergency,
-                                color: AppColors.emergency, size: 16),
+                            const Icon(
+                              Icons.emergency,
+                              color: AppColors.emergency,
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               'Emergency: ${request.emergencyType}',
                               style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 13),
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         ),
@@ -202,11 +212,11 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () => context.go(
-                                '/hospital/checklist/${widget.requestId}'),
+                              '/hospital/checklist/${widget.requestId}',
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.navy,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -214,8 +224,9 @@ class _TrackAmbulanceScreenState extends State<TrackAmbulanceScreen> {
                             child: const Text(
                               'Prepare for Patient (Checklist)',
                               style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
