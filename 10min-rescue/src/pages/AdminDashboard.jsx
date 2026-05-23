@@ -9,6 +9,7 @@ import {
   deleteDoc,
   serverTimestamp,
   addDoc,
+  GeoPoint,
 } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { callBackend } from '../backend'
@@ -99,6 +100,9 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab]   = useState(0)
   const [docModal, setDocModal]     = useState(null) // driver object
   const [bedModal, setBedModal]     = useState(null) // hospital object
+  const [editHospitalModal, setEditHospitalModal] = useState(null)
+  const [editFleetModal, setEditFleetModal] = useState(null)
+  const [editDriverModal, setEditDriverModal] = useState(null)
 
   // approve/reject loading maps  { [driverId]: true }
   const [approving, setApproving]   = useState({})
@@ -484,6 +488,13 @@ export default function AdminDashboard() {
                             <td className="px-3 py-3">
                               <div className="flex items-center gap-2">
                                 <button
+                                  onClick={() => setEditDriverModal(driver)}
+                                  className="text-xs font-semibold text-indigo-600 hover:underline"
+                                >
+                                  Edit
+                                </button>
+                                <span className="text-gray-200">|</span>
+                                <button
                                   onClick={() => setDocModal(driver)}
                                   className="text-xs font-medium text-accent-blue hover:underline"
                                 >
@@ -580,6 +591,12 @@ export default function AdminDashboard() {
                               >
                                 Edit Beds
                               </button>
+                              <button
+                                onClick={() => setEditHospitalModal(hospital)}
+                                className="text-xs font-bold border-2 border-gray-200 text-navy hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors ml-2"
+                              >
+                                Edit Details
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -618,6 +635,7 @@ export default function AdminDashboard() {
                           <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 pb-3">Join Code</th>
                           <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 pb-3">Drivers</th>
                           <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 pb-3">Status</th>
+                          <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 pb-3">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
@@ -643,6 +661,14 @@ export default function AdminDashboard() {
                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${fleet.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                   {fleet.isActive !== false ? 'Active' : 'Inactive'}
                                 </span>
+                              </td>
+                              <td className="px-3 py-3">
+                                <button
+                                  onClick={() => setEditFleetModal(fleet)}
+                                  className="text-xs font-bold border-2 border-gray-200 text-navy hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors"
+                                >
+                                  Edit Details
+                                </button>
                               </td>
                             </tr>
                           )
@@ -841,6 +867,31 @@ export default function AdminDashboard() {
           onClose={() => setBedModal(null)}
         />
       )}
+
+      {/* Edit Hospital Modal */}
+      {editHospitalModal && (
+        <EditHospitalModal
+          hospital={editHospitalModal}
+          onClose={() => setEditHospitalModal(null)}
+        />
+      )}
+
+      {/* Edit Fleet Modal */}
+      {editFleetModal && (
+        <EditFleetModal
+          fleet={editFleetModal}
+          onClose={() => setEditFleetModal(null)}
+        />
+      )}
+
+      {/* Edit Driver Modal */}
+      {editDriverModal && (
+        <EditDriverModal
+          driver={editDriverModal}
+          fleets={fleets}
+          onClose={() => setEditDriverModal(null)}
+        />
+      )}
     </div>
   )
 }
@@ -955,6 +1006,382 @@ function BedRow({ label, color, total, avail, setTotal, setAvail }) {
             onChange={(e) => setAvail(e.target.value)}
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-navy focus:outline-none focus:border-brand-red"
           />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Edit Hospital Modal ─────────────────────────────────────────────────────
+
+function EditHospitalModal({ hospital, onClose }) {
+  const [name, setName] = useState(hospital.name || '')
+  const [phone, setPhone] = useState(hospital.phone || '')
+  const [address, setAddress] = useState(hospital.address || '')
+  const [latitude, setLatitude] = useState(hospital.location?.latitude || '')
+  const [longitude, setLongitude] = useState(hospital.location?.longitude || '')
+  const [showMapPicker, setShowMapPicker] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    try {
+      const updates = {
+        name: name.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+      }
+      if (latitude !== '' && longitude !== '') {
+        updates.location = new GeoPoint(Number(latitude), Number(longitude))
+      } else {
+        updates.location = null
+      }
+      await updateDoc(doc(db, 'hospitals', hospital.id), updates)
+      onClose()
+    } catch (e) {
+      console.error('Save failed:', e)
+      alert('Failed to save. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-navy">Edit Hospital Details</h2>
+            <p className="text-xs text-gray-400">Update general information & location</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-navy">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Hospital Name *</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Phone Number</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Address</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+              />
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(true)}
+                className="shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-4 py-2.5 rounded-xl border border-blue-200 transition-colors flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+                Pick
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Latitude</label>
+              <input
+                type="number"
+                step="any"
+                value={latitude}
+                onChange={(e) => setLatitude(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Longitude</label>
+              <input
+                type="number"
+                step="any"
+                value={longitude}
+                onChange={(e) => setLongitude(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red font-mono"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 border-2 border-gray-200 text-navy font-semibold py-2.5 rounded-xl hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving || !name.trim()}
+            className="flex-1 bg-brand-red hover:bg-brand-red-dark text-white font-bold py-2.5 rounded-xl disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      {showMapPicker && (
+        <LocationPickerModal
+          initialAddress={address}
+          initialCoords={latitude !== '' && longitude !== '' ? { lat: Number(latitude), lng: Number(longitude) } : undefined}
+          onConfirm={(addr, coords) => {
+            setAddress(addr)
+            setLatitude(coords.lat)
+            setLongitude(coords.lng)
+            setShowMapPicker(false)
+          }}
+          onClose={() => setShowMapPicker(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Edit Fleet Modal ────────────────────────────────────────────────────────
+
+function EditFleetModal({ fleet, onClose }) {
+  const [name, setName] = useState(fleet.name || '')
+  const [contactPerson, setContactPerson] = useState(fleet.contactPerson || '')
+  const [phone, setPhone] = useState(fleet.phone || '')
+  const [address, setAddress] = useState(fleet.address || '')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'ambulance_fleets', fleet.id), {
+        name: name.trim(),
+        contactPerson: contactPerson.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+      })
+      onClose()
+    } catch (e) {
+      console.error('Save failed:', e)
+      alert('Failed to save. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-navy">Edit Fleet / NGO Details</h2>
+            <p className="text-xs text-gray-400">Update general information & contact person</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-navy">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Fleet Name *</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Contact Person *</label>
+            <input
+              type="text"
+              required
+              value={contactPerson}
+              onChange={(e) => setContactPerson(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Phone Number</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Address</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+        </div>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 border-2 border-gray-200 text-navy font-semibold py-2.5 rounded-xl hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving || !name.trim() || !contactPerson.trim()}
+            className="flex-1 bg-brand-red hover:bg-brand-red-dark text-white font-bold py-2.5 rounded-xl disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Edit Driver Modal ───────────────────────────────────────────────────────
+
+function EditDriverModal({ driver, fleets, onClose }) {
+  const [name, setName] = useState(driver.name || '')
+  const [phone, setPhone] = useState(driver.phone || '')
+  const [vehicleNumber, setVehicleNumber] = useState(driver.vehicleNumber || '')
+  const [vehicleType, setVehicleType] = useState(driver.vehicleType || 'BLS')
+  const [selectedFleetId, setSelectedFleetId] = useState(driver.fleetId || '')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    try {
+      const ambulanceType = vehicleType === 'ALS' ? 'A' : vehicleType === 'BLS' ? 'B' : 'C'
+      const chosenFleet = fleets.find(f => f.id === selectedFleetId)
+      
+      await updateDoc(doc(db, 'drivers', driver.id), {
+        name: name.trim(),
+        phone: phone.trim(),
+        vehicleNumber: vehicleNumber.trim(),
+        vehicleType,
+        ambulanceType,
+        fleetId: selectedFleetId || null,
+        fleetName: chosenFleet ? chosenFleet.name : null,
+      })
+      onClose()
+    } catch (e) {
+      console.error('Save failed:', e)
+      alert('Failed to save. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-navy">Edit Driver Details</h2>
+            <p className="text-xs text-gray-400">Update general information & vehicle linking</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-navy">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Driver Name *</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Phone Number</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Vehicle Number</label>
+            <input
+              type="text"
+              value={vehicleNumber}
+              onChange={(e) => setVehicleNumber(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Vehicle Type</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['BLS', 'ALS', 'Patient Transport'].map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setVehicleType(t)}
+                  className={`py-2 rounded-lg font-semibold text-xs border-2 transition-colors ${
+                    vehicleType === t ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1.5">Link to Fleet (Optional)</label>
+            <select
+              value={selectedFleetId}
+              onChange={(e) => setSelectedFleetId(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:border-brand-red bg-white"
+            >
+              <option value="">— No fleet (Independent driver) —</option>
+              {fleets.map(f => (
+                <option key={f.id} value={f.id}>{f.name} {f.phone ? `(${f.phone})` : ''}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 border-2 border-gray-200 text-navy font-semibold py-2.5 rounded-xl hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving || !name.trim()}
+            className="flex-1 bg-brand-red hover:bg-brand-red-dark text-white font-bold py-2.5 rounded-xl disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
     </div>
