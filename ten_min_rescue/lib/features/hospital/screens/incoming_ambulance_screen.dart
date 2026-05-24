@@ -498,6 +498,22 @@ class _HospitalInstructionsCardState extends State<_HospitalInstructionsCard> {
               const SizedBox(height: 6),
               ...items.map((it) {
                 final type = it['type'] as String? ?? 'text';
+                final stamp = hospitalRelativeTime(it['createdAt']);
+                final stampWidget = stamp.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 2, right: 2),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            stamp,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      );
                 if (type == 'audio') {
                   final id = it['id'] as String?;
                   final url = it['audioUrl'] as String?;
@@ -508,75 +524,87 @@ class _HospitalInstructionsCardState extends State<_HospitalInstructionsCard> {
                   final isPlaying = id != null && id == _playingId;
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Icon(Icons.mic_rounded,
-                            color: Colors.white, size: 16),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Voice note · ${dur}s',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                        Row(
+                          children: [
+                            const Icon(Icons.mic_rounded,
+                                color: Colors.white, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Voice note · ${dur}s',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                          ),
+                            if (hasAudio)
+                              TextButton.icon(
+                                onPressed: () => _play(it),
+                                icon: Icon(
+                                  isPlaying
+                                      ? Icons.stop_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: Text(
+                                  isPlaying ? 'Stop' : 'Play',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              )
+                          ],
                         ),
-                        if (hasAudio)
-                          TextButton.icon(
-                            onPressed: () => _play(it),
-                            icon: Icon(
-                              isPlaying
-                                  ? Icons.stop_rounded
-                                  : Icons.play_arrow_rounded,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                            label: Text(
-                              isPlaying ? 'Stop' : 'Play',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              minimumSize: Size.zero,
-                              tapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          )
+                        stampWidget,
                       ],
                     ),
                   );
                 }
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(
-                        Icons.sticky_note_2_outlined,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          (it['text'] as String? ?? '').trim(),
-                          style: GoogleFonts.poppins(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.sticky_note_2_outlined,
                             color: Colors.white,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
-                            height: 1.35,
+                            size: 16,
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              (it['text'] as String? ?? '').trim(),
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                      stampWidget,
                     ],
                   ),
                 );
@@ -587,4 +615,25 @@ class _HospitalInstructionsCardState extends State<_HospitalInstructionsCard> {
       },
     );
   }
+}
+
+/// Compact "Xs/Xm/Xh ago" label for a Firestore Timestamp (or null).
+String hospitalRelativeTime(dynamic createdAt) {
+  DateTime? when;
+  if (createdAt is Timestamp) {
+    when = createdAt.toDate();
+  } else if (createdAt is DateTime) {
+    when = createdAt;
+  } else if (createdAt is Map && createdAt['seconds'] != null) {
+    when = DateTime.fromMillisecondsSinceEpoch(
+      (createdAt['seconds'] as num).toInt() * 1000,
+    );
+  }
+  if (when == null) return '';
+  final diff = DateTime.now().difference(when);
+  if (diff.isNegative) return 'just now';
+  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
 }

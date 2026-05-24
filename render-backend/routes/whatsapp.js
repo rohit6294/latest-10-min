@@ -305,6 +305,34 @@ function buildRequestEventMessages({
   }
 }
 
+// Once the ride is closed (mission_completed or cancelled), the instructions
+// subcollection is no longer needed. Deleting it keeps inline-base64 voice
+// notes from accumulating in Firestore on the Spark free tier.
+async function deleteInstructionsSubcollection(requestId) {
+  try {
+    const ref = db
+      .collection('rescue_requests')
+      .doc(requestId)
+      .collection('instructions')
+    let totalDeleted = 0
+    while (true) {
+      const batch = await ref.limit(50).get()
+      if (batch.empty) break
+      const writeBatch = db.batch()
+      batch.docs.forEach((doc) => writeBatch.delete(doc.ref))
+      await writeBatch.commit()
+      totalDeleted += batch.size
+      if (batch.size < 50) break
+    }
+    return totalDeleted
+  } catch (e) {
+    console.warn(
+      `instructions cleanup failed for ${requestId}: ${e.message}`
+    )
+    return 0
+  }
+}
+
 async function applyHospitalProjection({
   requestRef,
   requestId,
@@ -900,7 +928,18 @@ router.post('/request-event', async (req, res) => {
       { merge: true }
     )
 
-    return res.json({ ok: true, sent: messages.length })
+    // End-of-ride cleanup: drop the patient instructions subcollection so the
+    // inline-base64 voice notes don't pile up in Firestore on the Spark plan.
+    let cleanedInstructions = 0
+    if (eventType === 'mission_completed') {
+      cleanedInstructions = await deleteInstructionsSubcollection(requestId)
+    }
+
+    return res.json({
+      ok: true,
+      sent: messages.length,
+      cleanedInstructions,
+    })
   } catch (e) {
     console.error('whatsapp request-event error:', e)
     return res.status(e.status || 500).json({ error: e.message })

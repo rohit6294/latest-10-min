@@ -33,6 +33,25 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // True if the calling driver has a `lastEquipmentCheckAt` newer than
+    // 12 hours ago, measured against the server clock (request.time). This
+    // is enforced on every accept-a-request transition so a driver cannot
+    // bypass the pre-shift check by manipulating their device clock.
+    function hasFreshEquipmentCheck() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/drivers/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/drivers/$(request.auth.uid)).data.lastEquipmentCheckAt != null &&
+        request.time - get(/databases/$(database)/documents/drivers/$(request.auth.uid)).data.lastEquipmentCheckAt < duration.value(12, 'h');
+    }
+
+    // True when this update is the driver claiming an unassigned request
+    // (i.e. they are setting their own uid into assignedDriverId for the
+    // first time). Used to gate the freshness check below.
+    function isDriverClaim() {
+      return resource.data.assignedDriverId == null &&
+        request.resource.data.assignedDriverId == request.auth.uid;
+    }
+
     // ── admins/{uid} ──────────────────────────────────────────────────────────
     match /admins/{uid} {
       allow read: if isSignedIn() && isOwner(uid);
@@ -110,6 +129,10 @@ service cloud.firestore {
       allow list: if isDriver() || isHospital() || isFleetAdmin() || isAdmin();
 
       // A driver can claim an unassigned request and progress their trip.
+      // Initial claim additionally requires a fresh equipment check (<12h),
+      // verified against the server clock so device-time manipulation can't
+      // bypass it. Subsequent updates (status transitions, hospital select,
+      // completion) don't re-check freshness — only the initial claim does.
       allow update: if isDriver()
         && (resource.data.assignedDriverId == null
             || resource.data.assignedDriverId == request.auth.uid)
@@ -120,7 +143,8 @@ service cloud.firestore {
           'assignedHospitalAcceptedAt', 'inTransitAt', 'completedAt',
           'driverCancellationReason', 'driverCancelledAt', 'updatedAt',
           'ambulanceType', 'declinedDriverIds'
-        ]);
+        ])
+        && (!isDriverClaim() || hasFreshEquipmentCheck());
 
       // The receiving hospital can mark its own incoming request.
       allow update: if isHospital()

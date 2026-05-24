@@ -109,7 +109,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       if (!driver.hasFreshEquipmentCheck) {
         final ok = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
-            builder: (_) => const EquipmentChecklistScreen(),
+            builder: (_) => EquipmentChecklistScreen(
+              ambulanceType: driver.ambulanceType.value,
+            ),
             fullscreenDialog: true,
           ),
         );

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -754,6 +755,23 @@ class _InstructionsStripe extends StatelessWidget {
 
   Widget _instructionRow(Map<String, dynamic> it) {
     final type = it['type'] as String? ?? 'text';
+    final stamp = relativeTimeLabel(it['createdAt']);
+    final stampWidget = stamp.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                stamp,
+                style: GoogleFonts.poppins(
+                  color: AppColors.textLight,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          );
+
     if (type == 'audio') {
       final id = it['id'] as String?;
       final url = it['audioUrl'] as String?;
@@ -762,68 +780,101 @@ class _InstructionsStripe extends StatelessWidget {
       final hasAudio =
           (url != null && url.isNotEmpty) || (b64 != null && b64.isNotEmpty);
       final isPlaying = id != null && id == playingInstructionId;
-      return Row(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(
-            Icons.mic_rounded,
-            size: 16,
-            color: AppColors.brandRed,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'Voice note · ${dur}s',
-              style: GoogleFonts.poppins(
-                color: AppColors.navy,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+          Row(
+            children: [
+              const Icon(
+                Icons.mic_rounded,
+                size: 16,
+                color: AppColors.brandRed,
               ),
-            ),
-          ),
-          if (hasAudio)
-            TextButton.icon(
-              onPressed: () => onPlayAudio(it),
-              icon: Icon(
-                isPlaying
-                    ? Icons.stop_rounded
-                    : Icons.play_arrow_rounded,
-                size: 18,
-              ),
-              label: Text(isPlaying ? 'Stop' : 'Play'),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Voice note · ${dur}s',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.navy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                foregroundColor: AppColors.accentBlue,
               ),
-            ),
+              if (hasAudio)
+                TextButton.icon(
+                  onPressed: () => onPlayAudio(it),
+                  icon: Icon(
+                    isPlaying
+                        ? Icons.stop_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 18,
+                  ),
+                  label: Text(isPlaying ? 'Stop' : 'Play'),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: AppColors.accentBlue,
+                  ),
+                ),
+            ],
+          ),
+          stampWidget,
         ],
       );
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(
-          Icons.sticky_note_2_outlined,
-          size: 16,
-          color: AppColors.accentBlue,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            (it['text'] as String? ?? '').trim(),
-            style: GoogleFonts.poppins(
-              color: AppColors.navy,
-              fontSize: 12,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.sticky_note_2_outlined,
+              size: 16,
+              color: AppColors.accentBlue,
             ),
-          ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                (it['text'] as String? ?? '').trim(),
+                style: GoogleFonts.poppins(
+                  color: AppColors.navy,
+                  fontSize: 12,
+                  height: 1.35,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ),
+        stampWidget,
       ],
     );
   }
+}
+
+/// Compact "Xs/Xm/Xh ago" label for a Firestore Timestamp (or null).
+String relativeTimeLabel(dynamic createdAt) {
+  DateTime? when;
+  if (createdAt is Timestamp) {
+    when = createdAt.toDate();
+  } else if (createdAt is DateTime) {
+    when = createdAt;
+  } else if (createdAt is Map && createdAt['seconds'] != null) {
+    when = DateTime.fromMillisecondsSinceEpoch(
+      (createdAt['seconds'] as num).toInt() * 1000,
+    );
+  }
+  if (when == null) return '';
+  final diff = DateTime.now().difference(when);
+  if (diff.isNegative) return 'just now';
+  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
 }

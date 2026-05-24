@@ -7,12 +7,22 @@ import '../../../core/constants/app_colors.dart';
 /// Pre-shift equipment checklist. Driver must verify every item before they
 /// can go online. The list is intentionally short and physical — the goal is
 /// "30 seconds, no missed defib", not paperwork.
+///
+/// The list is per-ambulance-type:
+///   C (Normal)   = 6 base items
+///   B (Advanced) = base + cardiac monitor, BVM
+///   A (ICU)      = Advanced + ventilator, IV pumps, ECG monitor
 class EquipmentChecklistScreen extends StatefulWidget {
   /// Called when the driver completes the checklist successfully — the
   /// caller (driver_home_screen) typically toggles the driver online after.
   final VoidCallback? onCompleted;
+  final String ambulanceType; // 'A', 'B', or 'C'
 
-  const EquipmentChecklistScreen({super.key, this.onCompleted});
+  const EquipmentChecklistScreen({
+    super.key,
+    this.onCompleted,
+    this.ambulanceType = 'C',
+  });
 
   @override
   State<EquipmentChecklistScreen> createState() =>
@@ -39,44 +49,92 @@ class _EquipmentChecklistScreenState extends State<EquipmentChecklistScreen> {
   final _fs = FirestoreService();
   bool _saving = false;
 
-  final List<_ChecklistItem> _items = [
-    _ChecklistItem(
-      id: 'oxygen',
-      label: 'Oxygen cylinder',
-      detail: 'Full / above 80%, regulator working',
-      icon: Icons.air_rounded,
-    ),
-    _ChecklistItem(
-      id: 'defib',
-      label: 'Defibrillator',
-      detail: 'Charged, pads in date, self-test passed',
-      icon: Icons.bolt_rounded,
-    ),
-    _ChecklistItem(
-      id: 'suction',
-      label: 'Suction unit',
-      detail: 'Powered on, hose & catheters present',
-      icon: Icons.water_drop_outlined,
-    ),
-    _ChecklistItem(
-      id: 'stretcher',
-      label: 'Stretcher & belts',
-      detail: 'Wheels lock, 3 straps intact',
-      icon: Icons.airline_seat_flat_rounded,
-    ),
-    _ChecklistItem(
-      id: 'first_aid',
-      label: 'First-aid kit',
-      detail: 'Gauze, gloves, BP cuff, glucometer strips',
-      icon: Icons.medical_services_rounded,
-    ),
-    _ChecklistItem(
-      id: 'fuel',
-      label: 'Fuel & vehicle',
-      detail: 'Tank ≥ 1/4, tyres OK, lights & siren tested',
-      icon: Icons.local_gas_station_rounded,
-    ),
-  ];
+  late final List<_ChecklistItem> _items = _buildItemsFor(widget.ambulanceType);
+
+  static List<_ChecklistItem> _buildItemsFor(String ambulanceType) {
+    final base = <_ChecklistItem>[
+      _ChecklistItem(
+        id: 'oxygen',
+        label: 'Oxygen cylinder',
+        detail: 'Full / above 80%, regulator working',
+        icon: Icons.air_rounded,
+      ),
+      _ChecklistItem(
+        id: 'defib',
+        label: 'Defibrillator',
+        detail: 'Charged, pads in date, self-test passed',
+        icon: Icons.bolt_rounded,
+      ),
+      _ChecklistItem(
+        id: 'suction',
+        label: 'Suction unit',
+        detail: 'Powered on, hose & catheters present',
+        icon: Icons.water_drop_outlined,
+      ),
+      _ChecklistItem(
+        id: 'stretcher',
+        label: 'Stretcher & belts',
+        detail: 'Wheels lock, 3 straps intact',
+        icon: Icons.airline_seat_flat_rounded,
+      ),
+      _ChecklistItem(
+        id: 'first_aid',
+        label: 'First-aid kit',
+        detail: 'Gauze, gloves, BP cuff, glucometer strips',
+        icon: Icons.medical_services_rounded,
+      ),
+      _ChecklistItem(
+        id: 'fuel',
+        label: 'Fuel & vehicle',
+        detail: 'Tank ≥ 1/4, tyres OK, lights & siren tested',
+        icon: Icons.local_gas_station_rounded,
+      ),
+    ];
+
+    // Advanced (B) adds cardiac monitoring + bag-valve mask.
+    if (ambulanceType == 'B' || ambulanceType == 'A') {
+      base.addAll([
+        _ChecklistItem(
+          id: 'cardiac_monitor',
+          label: 'Cardiac monitor',
+          detail: '3-lead ECG, leads + electrodes in stock',
+          icon: Icons.monitor_heart_rounded,
+        ),
+        _ChecklistItem(
+          id: 'bvm',
+          label: 'Bag-valve mask',
+          detail: 'Adult + paediatric size, reservoir intact',
+          icon: Icons.masks_rounded,
+        ),
+      ]);
+    }
+
+    // ICU (A) adds ventilator + IV pumps + 12-lead ECG.
+    if (ambulanceType == 'A') {
+      base.addAll([
+        _ChecklistItem(
+          id: 'ventilator',
+          label: 'Ventilator',
+          detail: 'Self-test passed, circuit + HME filter clean',
+          icon: Icons.compress_rounded,
+        ),
+        _ChecklistItem(
+          id: 'iv_pumps',
+          label: 'IV infusion pumps',
+          detail: 'Pumps powered, batteries ≥ 80%, lines ready',
+          icon: Icons.medication_liquid_rounded,
+        ),
+        _ChecklistItem(
+          id: 'ecg_12lead',
+          label: '12-lead ECG',
+          detail: 'Leads in date, paper roll loaded',
+          icon: Icons.show_chart_rounded,
+        ),
+      ]);
+    }
+
+    return base;
+  }
 
   bool get _allChecked => _items.every((i) => i.checked);
 
@@ -85,7 +143,11 @@ class _EquipmentChecklistScreenState extends State<EquipmentChecklistScreen> {
     setState(() => _saving = true);
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      await _fs.recordEquipmentCheck(uid);
+      await _fs.recordEquipmentCheck(
+        uid,
+        ambulanceType: widget.ambulanceType,
+        checkedItemIds: _items.map((i) => i.id).toList(),
+      );
       if (!mounted) return;
       Navigator.of(context).pop(true);
       widget.onCompleted?.call();

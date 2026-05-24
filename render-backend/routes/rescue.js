@@ -127,16 +127,16 @@ router.post('/rate', async (req, res) => {
         const dd = driverSnap.data() || {}
         const prevTotal = Number(dd.totalRatings) || 0
         const prevAvg = Number(dd.rating) || 0
-        const prevCompleted = Number(dd.completedRides) || 0
         const newTotal = prevTotal + 1
         const newAvg = (prevAvg * prevTotal + r) / newTotal
+        // completedRides is incremented inside Flutter's completeRide() now,
+        // so it does not depend on the patient remembering to rate. We only
+        // touch the rating fields here.
         tx.set(
           driverRef,
           {
             rating: Number(newAvg.toFixed(2)),
             totalRatings: newTotal,
-            // Only count the ride once — pages can re-submit without inflating.
-            completedRides: prevCompleted + 1,
           },
           { merge: true }
         )
@@ -291,6 +291,60 @@ router.post('/instruction', async (req, res) => {
   } catch (e) {
     console.error('instruction error:', e)
     res.status(500).json({ error: e.message })
+  }
+})
+
+// Patient may delete an instruction within 60 seconds of sending it.
+// Tolerates typos / accidental sends. After the grace window, the note is
+// permanent (since the driver / hospital may already have acted on it).
+//
+// Body: { requestId, instructionId }
+router.post('/instruction/delete', async (req, res) => {
+  try {
+    const { requestId, instructionId } = req.body || {}
+    if (!requestId || !instructionId) {
+      return res
+        .status(400)
+        .json({ error: 'requestId and instructionId required' })
+    }
+    const ref = db
+      .collection('rescue_requests')
+      .doc(requestId)
+      .collection('instructions')
+      .doc(instructionId)
+    const snap = await ref.get()
+    if (!snap.exists) {
+      return res.status(404).json({ error: 'instruction not found' })
+    }
+    const data = snap.data()
+    const createdAtMs = data.createdAt?.toMillis?.() ?? 0
+    if (!createdAtMs) {
+      return res
+        .status(400)
+        .json({ error: 'instruction has no createdAt timestamp' })
+    }
+    const ageMs = Date.now() - createdAtMs
+    const GRACE_MS = 60 * 1000
+    if (ageMs > GRACE_MS) {
+      return res
+        .status(403)
+        .json({ error: 'too late', ageMs, graceMs: GRACE_MS })
+    }
+    await ref.delete()
+    await db
+      .collection('rescue_requests')
+      .doc(requestId)
+      .set(
+        {
+          lastInstructionAt: FieldValue.serverTimestamp(),
+          instructionCount: FieldValue.increment(-1),
+        },
+        { merge: true }
+      )
+    return res.json({ ok: true })
+  } catch (e) {
+    console.error('instruction delete error:', e)
+    return res.status(500).json({ error: e.message })
   }
 })
 

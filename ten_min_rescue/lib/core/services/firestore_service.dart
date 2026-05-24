@@ -337,10 +337,23 @@ class FirestoreService {
   /// Mark a driver as having completed the pre-shift equipment check.
   /// Cleared every 12 hours so a driver going on/off shift through a long day
   /// still has to re-verify their kit.
-  Future<void> recordEquipmentCheck(String driverId) async {
-    await _db.doc(FirestorePaths.driver(driverId)).set({
+  Future<void> recordEquipmentCheck(
+    String driverId, {
+    String? ambulanceType,
+    List<String>? checkedItemIds,
+  }) async {
+    final payload = <String, dynamic>{
       'lastEquipmentCheckAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    if (ambulanceType != null) {
+      payload['lastEquipmentCheckAmbulanceType'] = ambulanceType;
+    }
+    if (checkedItemIds != null) {
+      payload['lastEquipmentCheckItems'] = checkedItemIds;
+    }
+    await _db
+        .doc(FirestorePaths.driver(driverId))
+        .set(payload, SetOptions(merge: true));
   }
 
   /// Confirm patient pickup. Auto-assigns hospital if patient pre-selected,
@@ -464,9 +477,16 @@ class FirestoreService {
       'status': RequestStatus.completed.value,
       'completedAt': FieldValue.serverTimestamp(),
     });
+    // Count the ride immediately on completion, not on rating. Patients who
+    // never rate (the majority) would otherwise leave the counter at zero
+    // and break gamification + driver-of-the-month leaderboards. The
+    // backend /rescue/rate route no longer increments this, so we don't
+    // double-count when a rating does arrive.
     await _db.doc(FirestorePaths.driver(driverId)).update({
       'isAvailable': true,
       'currentRequestId': null,
+      'completedRides': FieldValue.increment(1),
+      'lastCompletedRideAt': FieldValue.serverTimestamp(),
     });
     await _notifyWhatsappEventBestEffort(requestId, 'hospital_arrived');
   }

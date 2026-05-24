@@ -864,7 +864,11 @@ function InstructionsPanel({ requestId, instructions }) {
             Sent ({instructions.length})
           </div>
           {instructions.map((it) => (
-            <InstructionRow key={it.id} instruction={it} />
+            <InstructionRow
+              key={it.id}
+              instruction={it}
+              requestId={requestId}
+            />
           ))}
         </div>
       )}
@@ -872,13 +876,72 @@ function InstructionsPanel({ requestId, instructions }) {
   )
 }
 
-function InstructionRow({ instruction }) {
+function relativeTime(createdAt) {
+  const ms =
+    createdAt?.toDate?.()?.getTime?.() ??
+    (typeof createdAt?.seconds === 'number' ? createdAt.seconds * 1000 : null)
+  if (!ms) return ''
+  const diff = Math.max(0, Date.now() - ms)
+  if (diff < 60 * 1000) return `${Math.round(diff / 1000)}s ago`
+  if (diff < 60 * 60 * 1000) return `${Math.round(diff / 60000)}m ago`
+  if (diff < 24 * 60 * 60 * 1000) return `${Math.round(diff / 3600000)}h ago`
+  return `${Math.round(diff / 86400000)}d ago`
+}
+
+function InstructionRow({ instruction, requestId }) {
+  const [nowMs, setNowMs] = useState(Date.now())
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  // Tick once a second while the delete window is open so the countdown
+  // disappears smoothly when the 60s grace runs out.
+  useEffect(() => {
+    const createdMs =
+      instruction.createdAt?.toDate?.()?.getTime?.() ??
+      (typeof instruction.createdAt?.seconds === 'number'
+        ? instruction.createdAt.seconds * 1000
+        : null)
+    if (!createdMs) return
+    const ageSec = Math.floor((Date.now() - createdMs) / 1000)
+    if (ageSec >= 60) return
+    const t = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [instruction.createdAt])
+
   const isAudio = instruction.type === 'audio'
   const audioSrc = instruction.audioUrl
     ? instruction.audioUrl
     : instruction.audioBase64
     ? `data:${instruction.mimeType || 'audio/webm'};base64,${instruction.audioBase64}`
     : null
+  const stamp = relativeTime(instruction.createdAt)
+  const createdMs =
+    instruction.createdAt?.toDate?.()?.getTime?.() ??
+    (typeof instruction.createdAt?.seconds === 'number'
+      ? instruction.createdAt.seconds * 1000
+      : null)
+  const ageMs = createdMs ? nowMs - createdMs : Infinity
+  const canDelete =
+    !!createdMs &&
+    ageMs < 60 * 1000 &&
+    !deleting &&
+    instruction.source !== 'whatsapp'
+  const secondsLeft = canDelete ? Math.max(1, 60 - Math.floor(ageMs / 1000)) : 0
+
+  const onDelete = async () => {
+    if (!canDelete) return
+    setDeleteError('')
+    setDeleting(true)
+    try {
+      await callBackend('/rescue/instruction/delete', {
+        body: { requestId, instructionId: instruction.id },
+      })
+    } catch (e) {
+      setDeleteError(e.message || 'Could not delete')
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3">
       {isAudio ? (
@@ -896,6 +959,23 @@ function InstructionRow({ instruction }) {
           <span className="text-base">📝</span>
           <p className="text-sm text-navy leading-snug">{instruction.text}</p>
         </div>
+      )}
+      <div className="flex items-center justify-between mt-1.5">
+        {canDelete ? (
+          <button
+            onClick={onDelete}
+            disabled={deleting}
+            className="text-[10px] text-red-500 hover:text-red-700 underline disabled:text-gray-400"
+          >
+            {deleting ? 'Deleting…' : `Delete (${secondsLeft}s)`}
+          </button>
+        ) : (
+          <span />
+        )}
+        {stamp && <span className="text-[10px] text-gray-400">{stamp}</span>}
+      </div>
+      {deleteError && (
+        <div className="text-[10px] text-red-500 mt-1">{deleteError}</div>
       )}
     </div>
   )
