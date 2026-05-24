@@ -8,6 +8,7 @@ import '../../../core/services/firestore_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/fcm_service.dart';
 import '../../../core/models/driver_model.dart';
+import 'background_setup_screen.dart';
 import 'equipment_checklist_screen.dart';
 import '../../../core/models/rescue_request_model.dart';
 import '../../../core/models/sos_request_model.dart';
@@ -47,6 +48,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         }, onError: (_) {});
     // Register FCM token (best-effort, won't fail if user denies)
     FcmService.initForDriver(_uid);
+    // First launch: walk the driver through OEM-specific autostart /
+    // background-power settings so emergency pushes ring reliably.
+    _maybeShowBackgroundSetup();
+  }
+
+  Future<void> _maybeShowBackgroundSetup() async {
+    if (!await BackgroundSetupScreen.shouldShow()) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => BackgroundSetupScreen(
+          onDone: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
   }
 
   @override
