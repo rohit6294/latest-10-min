@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import {
   doc,
   onSnapshot,
@@ -96,6 +96,8 @@ const FALLBACK_108_AFTER_MS = 60 * 1000
 
 export default function TrackPage() {
   const { requestId } = useParams()
+  const [searchParams] = useSearchParams()
+  const wantsRatePrompt = searchParams.get('rate') === '1'
   const [req, setReq] = useState(null)
   const [driverLocation, setDriverLocation] = useState(null) // {lat, lng}
   const [route, setRoute] = useState([]) // array of [lat, lng]
@@ -108,6 +110,12 @@ export default function TrackPage() {
   const mapInstanceRef = useRef(null)
   const markersRef = useRef({})
   const polylineRef = useRef(null)
+  const ratingPanelRef = useRef(null)
+  const ratingScrolledRef = useRef(false)
+  // Anchor for the 108 fallback timer. Captured the first time we see a
+  // createdAt on the doc so we can compute elapsed time from a reference
+  // point that doesn't drift with the device clock.
+  const timerAnchorRef = useRef(null)
 
   // Tick once a second so the "search elapsed" timer and 108 fallback banner
   // re-render without an explicit state update from Firestore.
@@ -138,6 +146,18 @@ export default function TrackPage() {
     )
     return unsub
   }, [requestId])
+
+  // ─── Auto-scroll to rating panel when arriving from WhatsApp ?rate=1 ──
+  useEffect(() => {
+    if (!wantsRatePrompt) return
+    if (ratingScrolledRef.current) return
+    if (req?.status !== 'completed') return
+    if (req?.patientRating || ratingSubmitted) return
+    const el = ratingPanelRef.current
+    if (!el) return
+    ratingScrolledRef.current = true
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [wantsRatePrompt, req?.status, req?.patientRating, ratingSubmitted])
 
   // ─── Subscribe to patient instructions subcollection ──────────────────
   useEffect(() => {
@@ -337,13 +357,30 @@ export default function TrackPage() {
   const hospitalAddress = req.hospitalAddress || req.preferredHospitalAddress
 
   // Time since the request was created — used to drive the 108 fallback banner
-  // when matching is taking too long.
+  // when matching is taking too long. Robust against device-clock skew:
+  // captures a one-time anchor of (clientNow, serverCreatedAt) and counts
+  // elapsed time using the local clock's delta from that anchor, not the
+  // wall-clock difference. If the device clock looks broken at anchor time
+  // we assume the request was just created.
   const createdAtMs =
     req.createdAt?.toDate?.()?.getTime?.() ??
     (typeof req.createdAt?.seconds === 'number'
       ? req.createdAt.seconds * 1000
       : null)
-  const elapsedMs = createdAtMs ? nowMs - createdAtMs : 0
+  if (createdAtMs && !timerAnchorRef.current) {
+    const apparentAge = Date.now() - createdAtMs
+    const trustClock =
+      apparentAge >= -2 * 60 * 1000 && apparentAge < 24 * 60 * 60 * 1000
+    timerAnchorRef.current = {
+      clientAnchorMs: Date.now(),
+      initialAgeMs: trustClock ? Math.max(0, apparentAge) : 0,
+    }
+  }
+  const elapsedMs = timerAnchorRef.current
+    ? nowMs -
+      timerAnchorRef.current.clientAnchorMs +
+      timerAnchorRef.current.initialAgeMs
+    : 0
   const showFallback108 =
     req.status === 'pending_driver' && elapsedMs >= FALLBACK_108_AFTER_MS
   const searchSeconds = Math.max(0, Math.round(elapsedMs / 1000))
@@ -518,11 +555,13 @@ export default function TrackPage() {
 
         {/* Rating modal trigger on completion */}
         {req.status === 'completed' && hasDriver && !req.patientRating && !ratingSubmitted && (
-          <RatingPanel
-            requestId={requestId}
-            driverName={req.driverName}
-            onSubmitted={() => setRatingSubmitted(true)}
-          />
+          <div ref={ratingPanelRef}>
+            <RatingPanel
+              requestId={requestId}
+              driverName={req.driverName}
+              onSubmitted={() => setRatingSubmitted(true)}
+            />
+          </div>
         )}
 
         {/* Show submitted rating confirmation */}
@@ -606,11 +645,24 @@ function InstructionsPanel({ requestId, instructions }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [micBlocked, setMicBlocked] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
   const recordTimerRef = useRef(null)
+
+  // Detect Chrome vs Firefox/Safari to tailor the "how to re-enable mic"
+  // guidance shown when the browser permission is denied.
+  const browserName = (() => {
+    const ua =
+      typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
+    if (/Edg\//.test(ua)) return 'edge'
+    if (/Chrome\//.test(ua)) return 'chrome'
+    if (/Firefox\//.test(ua)) return 'firefox'
+    if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return 'safari'
+    return 'other'
+  })()
 
   const sendText = async () => {
     const t = text.trim()
@@ -631,6 +683,7 @@ function InstructionsPanel({ requestId, instructions }) {
 
   const startRecording = async () => {
     setError('')
+    setMicBlocked(false)
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('Microphone not available on this browser.')
       return
@@ -642,7 +695,9 @@ function InstructionsPanel({ requestId, instructions }) {
         : MediaRecorder.isTypeSupported('audio/mp4')
         ? 'audio/mp4'
         : 'audio/webm'
-      const recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 24000 })
+      // 16 kbps Opus keeps a 30s note around 60KB so it always fits the
+      // Firestore inline-base64 path (we don't rely on Firebase Storage).
+      const recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 16000 })
       chunksRef.current = []
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
@@ -684,7 +739,16 @@ function InstructionsPanel({ requestId, instructions }) {
         })
       }, 1000)
     } catch (e) {
-      setError(e.message || 'Microphone permission denied.')
+      // Browsers throw `NotAllowedError` on permission denial (Chrome,
+      // Firefox, Safari, Edge). Anything else is treated as a generic error.
+      const denied =
+        e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
+      if (denied) {
+        setMicBlocked(true)
+        setError('')
+      } else {
+        setError(e.message || 'Could not start recording. Try again.')
+      }
     }
   }
 
@@ -746,6 +810,51 @@ function InstructionsPanel({ requestId, instructions }) {
       {error && (
         <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs">
           {error}
+        </div>
+      )}
+
+      {micBlocked && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs space-y-2">
+          <div className="font-bold text-sm flex items-center gap-1.5">
+            🎤 Microphone is blocked
+          </div>
+          <p className="leading-relaxed">
+            You denied microphone access. Voice notes won't work until you
+            re-allow it. You can still send text notes above.
+          </p>
+          <ol className="list-decimal pl-4 space-y-0.5">
+            {browserName === 'chrome' || browserName === 'edge' ? (
+              <>
+                <li>Tap the 🔒 padlock at the left of the address bar.</li>
+                <li>Find <b>Microphone</b> → set to <b>Allow</b>.</li>
+                <li>Reload this page and tap Record again.</li>
+              </>
+            ) : browserName === 'firefox' ? (
+              <>
+                <li>Tap the 🔒 padlock left of the address bar.</li>
+                <li>Click <b>Clear permission</b> next to Microphone.</li>
+                <li>Reload and tap Record — answer <b>Allow</b> this time.</li>
+              </>
+            ) : browserName === 'safari' ? (
+              <>
+                <li>Open <b>Settings → Safari → Microphone</b>.</li>
+                <li>Find this site, change to <b>Allow</b>.</li>
+                <li>Reload this page and tap Record.</li>
+              </>
+            ) : (
+              <>
+                <li>Open your browser's site settings.</li>
+                <li>Allow microphone access for this page.</li>
+                <li>Reload and tap Record again.</li>
+              </>
+            )}
+          </ol>
+          <button
+            onClick={() => setMicBlocked(false)}
+            className="text-amber-700 underline text-[11px] mt-1"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 

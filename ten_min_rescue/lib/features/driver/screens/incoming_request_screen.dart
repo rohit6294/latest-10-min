@@ -94,6 +94,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
   Future<void> _ignoreAndExit({
     required bool showFeedback,
     String reason = 'timeout',
+    String? reasonText,
   }) async {
     if (_closing) return;
     _closing = true;
@@ -105,6 +106,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
         widget.requestId,
         _uid,
         reason: reason,
+        reasonText: reasonText,
       );
     } catch (e) {
       _closing = false;
@@ -138,16 +140,20 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
   /// drivers = mismatch in dispatch logic; on-break = scheduling).
   Future<void> _decline() async {
     _countdownTimer?.cancel();
-    final reason = await _showRefusalReasonSheet();
-    if (reason == null) {
+    final picked = await _showRefusalReasonSheet();
+    if (picked == null) {
       // User backed out of the sheet — resume countdown.
       if (mounted && !_closing) _startCountdown();
       return;
     }
-    await _ignoreAndExit(showFeedback: true, reason: reason);
+    await _ignoreAndExit(
+      showFeedback: true,
+      reason: picked.reason,
+      reasonText: picked.reasonText,
+    );
   }
 
-  Future<String?> _showRefusalReasonSheet() async {
+  Future<_DeclineChoice?> _showRefusalReasonSheet() async {
     const reasons = <Map<String, dynamic>>[
       {'id': 'too_far', 'label': 'Too far', 'icon': Icons.straighten_rounded},
       {
@@ -168,7 +174,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
       },
       {'id': 'other', 'label': 'Other', 'icon': Icons.more_horiz_rounded},
     ];
-    return showModalBottomSheet<String>(
+    return showModalBottomSheet<_DeclineChoice>(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
@@ -213,9 +219,19 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
                   spacing: 8,
                   runSpacing: 8,
                   children: reasons.map((r) {
+                    final id = r['id'] as String;
                     return ActionChip(
-                      onPressed: () =>
-                          Navigator.of(ctx).pop(r['id'] as String),
+                      onPressed: () async {
+                        if (id == 'other') {
+                          final detail = await _promptOtherReasonText();
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop(
+                            _DeclineChoice(reason: 'other', reasonText: detail),
+                          );
+                          return;
+                        }
+                        Navigator.of(ctx).pop(_DeclineChoice(reason: id));
+                      },
                       avatar: Icon(
                         r['icon'] as IconData,
                         size: 16,
@@ -261,6 +277,50 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
         );
       },
     );
+  }
+
+  /// Follow-up text capture for the "Other" decline chip. Without this the
+  /// "other" bucket is a black hole in ops analytics — the dispatcher cannot
+  /// tell *why* drivers keep declining. Optional: a driver who taps "Send"
+  /// without text still records the decline, just with no extra context.
+  Future<String?> _promptOtherReasonText() async {
+    final controller = TextEditingController();
+    final detail = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            'What\'s the reason?',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 120,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'e.g. wrong address, no parking, vehicle in service',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dctx).pop(''),
+              child: const Text('Skip'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dctx).pop(controller.text.trim()),
+              child: const Text('Decline'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    return detail;
   }
 
   @override
@@ -608,4 +668,12 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
       },
     );
   }
+}
+
+/// Result of the decline-reason flow. `reasonText` is only populated when the
+/// driver picks "Other" and types a follow-up. Empty/null otherwise.
+class _DeclineChoice {
+  final String reason;
+  final String? reasonText;
+  const _DeclineChoice({required this.reason, this.reasonText});
 }

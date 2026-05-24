@@ -269,12 +269,18 @@ class FirestoreService {
     String requestId,
     String driverId, {
     String reason = 'unspecified',
+    String? reasonText,
   }) async {
-    final declineEntry = {
+    final cleanReasonText = reasonText?.trim();
+    final hasReasonText = cleanReasonText != null && cleanReasonText.isNotEmpty;
+
+    final declineEntry = <String, dynamic>{
       'driverId': driverId,
       'reason': reason,
       'declinedAt': Timestamp.now(),
     };
+    if (hasReasonText) declineEntry['reasonText'] = cleanReasonText;
+
     await _db.doc(FirestorePaths.rescueRequest(requestId)).set({
       'declinedDriverIds': FieldValue.arrayUnion([driverId]),
       'declineLog': FieldValue.arrayUnion([declineEntry]),
@@ -285,21 +291,28 @@ class FirestoreService {
     // often / why are we losing requests in this area". Uses update() so the
     // dot-notation actually nests `declineCounts.<reason>` instead of being
     // written as a flat literal key.
+    final updatePayload = <String, dynamic>{
+      'lastDeclineReason': reason,
+      'lastDeclineAt': FieldValue.serverTimestamp(),
+      'declineCounts.$reason': FieldValue.increment(1),
+    };
+    if (hasReasonText) updatePayload['lastDeclineReasonText'] = cleanReasonText;
+
     try {
-      await _db.doc(FirestorePaths.driver(driverId)).update({
-        'lastDeclineReason': reason,
-        'lastDeclineAt': FieldValue.serverTimestamp(),
-        'declineCounts.$reason': FieldValue.increment(1),
-      });
+      await _db.doc(FirestorePaths.driver(driverId)).update(updatePayload);
     } catch (_) {
       // Driver doc might not have declineCounts yet — fall back to a merge
       // that initialises the map. Safe because increment() handles missing
       // fields by treating them as 0.
-      await _db.doc(FirestorePaths.driver(driverId)).set({
+      final fallback = <String, dynamic>{
         'lastDeclineReason': reason,
         'lastDeclineAt': FieldValue.serverTimestamp(),
         'declineCounts': {reason: FieldValue.increment(1)},
-      }, SetOptions(merge: true));
+      };
+      if (hasReasonText) fallback['lastDeclineReasonText'] = cleanReasonText;
+      await _db
+          .doc(FirestorePaths.driver(driverId))
+          .set(fallback, SetOptions(merge: true));
     }
   }
 

@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../../../core/services/firestore_service.dart';
 import '../../../core/models/rescue_request_model.dart';
 import '../../../core/models/ambulance_type.dart';
@@ -406,21 +408,61 @@ class _DriverHandoffCard extends StatelessWidget {
 
 /// Hospital-side display of the patient instruction feed (text + voice).
 /// Critical for ER prep — eg "patient is diabetic" / "stroke onset 7:42".
-class _HospitalInstructionsCard extends StatelessWidget {
+class _HospitalInstructionsCard extends StatefulWidget {
   final String requestId;
   const _HospitalInstructionsCard({required this.requestId});
 
-  Future<void> _play(BuildContext context, String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  @override
+  State<_HospitalInstructionsCard> createState() =>
+      _HospitalInstructionsCardState();
+}
+
+class _HospitalInstructionsCardState extends State<_HospitalInstructionsCard> {
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _playingId;
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _play(Map<String, dynamic> it) async {
+    final id = it['id'] as String?;
+    final url = it['audioUrl'] as String?;
+    final b64 = it['audioBase64'] as String?;
+    final mime = it['mimeType'] as String? ?? 'audio/webm';
+    try {
+      if (_playingId == id) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _playingId = null);
+        return;
+      }
+      await _audioPlayer.stop();
+      if (url != null && url.isNotEmpty) {
+        await _audioPlayer.play(UrlSource(url));
+      } else if (b64 != null && b64.isNotEmpty) {
+        await _audioPlayer.play(BytesSource(base64Decode(b64), mimeType: mime));
+      } else {
+        return;
+      }
+      if (mounted) setState(() => _playingId = id);
+      _audioPlayer.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _playingId = null);
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not play voice note.')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: FirestoreService().watchInstructions(requestId),
+      stream: FirestoreService().watchInstructions(widget.requestId),
       builder: (context, snap) {
         final items = snap.data ?? const <Map<String, dynamic>>[];
         if (items.isEmpty) return const SizedBox.shrink();
@@ -457,8 +499,13 @@ class _HospitalInstructionsCard extends StatelessWidget {
               ...items.map((it) {
                 final type = it['type'] as String? ?? 'text';
                 if (type == 'audio') {
+                  final id = it['id'] as String?;
                   final url = it['audioUrl'] as String?;
+                  final b64 = it['audioBase64'] as String?;
                   final dur = (it['durationSec'] as num?)?.toInt() ?? 0;
+                  final hasAudio = (url != null && url.isNotEmpty) ||
+                      (b64 != null && b64.isNotEmpty);
+                  final isPlaying = id != null && id == _playingId;
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Row(
@@ -476,13 +523,18 @@ class _HospitalInstructionsCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (url != null && url.isNotEmpty)
+                        if (hasAudio)
                           TextButton.icon(
-                            onPressed: () => _play(context, url),
-                            icon: const Icon(Icons.play_arrow_rounded,
-                                size: 16, color: Colors.white),
+                            onPressed: () => _play(it),
+                            icon: Icon(
+                              isPlaying
+                                  ? Icons.stop_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 16,
+                              color: Colors.white,
+                            ),
                             label: Text(
-                              'Play',
+                              isPlaying ? 'Stop' : 'Play',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontSize: 11,

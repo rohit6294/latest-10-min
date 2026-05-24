@@ -7,7 +7,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../../../core/services/firestore_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/routing_service.dart';
@@ -32,6 +34,9 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
   LatLng? _driverLocation;
   LatLng? _patientLocation;
   bool _cancelling = false;
+
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _playingInstructionId;
 
   // Routing
   List<LatLng> _routePoints = [];
@@ -129,20 +134,40 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
     }
   }
 
-  /// Open a voice note attached to a patient instruction. Plays via the
-  /// system's default audio handler (browser / media player); avoids adding
-  /// an in-app audio dependency for v1.
-  Future<void> _playVoiceNote(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No audio player installed to open this voice note.'),
-          backgroundColor: AppColors.brandRed,
-        ),
-      );
+  /// Play a voice note inline. Accepts either a hosted URL or inline base64
+  /// (the Spark-plan fallback when Firebase Storage isn't enabled).
+  Future<void> _playVoiceNote(Map<String, dynamic> instruction) async {
+    final id = instruction['id'] as String?;
+    final url = instruction['audioUrl'] as String?;
+    final b64 = instruction['audioBase64'] as String?;
+    final mime = instruction['mimeType'] as String? ?? 'audio/webm';
+    try {
+      if (_playingInstructionId == id) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _playingInstructionId = null);
+        return;
+      }
+      await _audioPlayer.stop();
+      if (url != null && url.isNotEmpty) {
+        await _audioPlayer.play(UrlSource(url));
+      } else if (b64 != null && b64.isNotEmpty) {
+        await _audioPlayer.play(BytesSource(base64Decode(b64), mimeType: mime));
+      } else {
+        return;
+      }
+      if (mounted) setState(() => _playingInstructionId = id);
+      _audioPlayer.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _playingInstructionId = null);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not play voice note: $e'),
+            backgroundColor: AppColors.brandRed,
+          ),
+        );
+      }
     }
   }
 
@@ -193,6 +218,7 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
     WakelockPlus.disable();
     _routeRefreshTimer?.cancel();
     _locationService.stopTracking();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -493,6 +519,7 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
                       _InstructionsStripe(
                         requestId: widget.requestId,
                         onPlayAudio: _playVoiceNote,
+                        playingInstructionId: _playingInstructionId,
                       ),
                       // ETA + Distance chips
                       Row(
@@ -661,11 +688,13 @@ class _NavigateToPatientScreenState extends State<NavigateToPatientScreen> {
 /// share the same context the patient is providing while en route.
 class _InstructionsStripe extends StatelessWidget {
   final String requestId;
-  final Future<void> Function(String url) onPlayAudio;
+  final Future<void> Function(Map<String, dynamic> instruction) onPlayAudio;
+  final String? playingInstructionId;
 
   const _InstructionsStripe({
     required this.requestId,
     required this.onPlayAudio,
+    this.playingInstructionId,
   });
 
   @override
@@ -726,8 +755,13 @@ class _InstructionsStripe extends StatelessWidget {
   Widget _instructionRow(Map<String, dynamic> it) {
     final type = it['type'] as String? ?? 'text';
     if (type == 'audio') {
+      final id = it['id'] as String?;
       final url = it['audioUrl'] as String?;
+      final b64 = it['audioBase64'] as String?;
       final dur = (it['durationSec'] as num?)?.toInt() ?? 0;
+      final hasAudio =
+          (url != null && url.isNotEmpty) || (b64 != null && b64.isNotEmpty);
+      final isPlaying = id != null && id == playingInstructionId;
       return Row(
         children: [
           const Icon(
@@ -746,11 +780,16 @@ class _InstructionsStripe extends StatelessWidget {
               ),
             ),
           ),
-          if (url != null && url.isNotEmpty)
+          if (hasAudio)
             TextButton.icon(
-              onPressed: () => onPlayAudio(url),
-              icon: const Icon(Icons.play_arrow_rounded, size: 18),
-              label: const Text('Play'),
+              onPressed: () => onPlayAudio(it),
+              icon: Icon(
+                isPlaying
+                    ? Icons.stop_rounded
+                    : Icons.play_arrow_rounded,
+                size: 18,
+              ),
+              label: Text(isPlaying ? 'Stop' : 'Play'),
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -759,14 +798,6 @@ class _InstructionsStripe extends StatelessWidget {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 foregroundColor: AppColors.accentBlue,
-              ),
-            )
-          else
-            Text(
-              'Inline',
-              style: GoogleFonts.poppins(
-                color: AppColors.textLight,
-                fontSize: 10,
               ),
             ),
         ],

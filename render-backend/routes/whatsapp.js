@@ -1,6 +1,11 @@
 const express = require('express')
 const { db, FieldValue, GeoPoint } = require('../lib/firebase')
-const { sendText, sendLocationRequest } = require('../lib/gupshup')
+const {
+  sendText: rawSendText,
+  sendLocationRequest: rawSendLocationRequest,
+  sendInteractiveButtons: rawSendInteractiveButtons,
+} = require('../lib/gupshup')
+const { logAudit } = require('../lib/whatsappAudit')
 const { requireAuth } = require('../lib/authGuard')
 const {
   findAndNotifyDrivers,
@@ -11,6 +16,41 @@ const {
   setSession,
   clearSession,
 } = require('../lib/whatsappSession')
+
+// Audit-wrapped outbound senders. Every outbound message is mirrored to the
+// whatsapp_audit Firestore collection for compliance + debugging.
+async function sendText(destination, text, auditMeta = {}) {
+  await logAudit({
+    direction: 'out',
+    phone: destination,
+    summary: text,
+    payload: { type: 'text', text },
+    ...auditMeta,
+  })
+  return rawSendText(destination, text)
+}
+
+async function sendLocationRequest(destination, bodyText, auditMeta = {}) {
+  await logAudit({
+    direction: 'out',
+    phone: destination,
+    summary: `[location-request] ${bodyText}`,
+    payload: { type: 'location_request_message', body: bodyText },
+    ...auditMeta,
+  })
+  return rawSendLocationRequest(destination, bodyText)
+}
+
+async function sendInteractiveButtons(destination, bodyText, buttons, auditMeta = {}) {
+  await logAudit({
+    direction: 'out',
+    phone: destination,
+    summary: `[buttons] ${bodyText}`,
+    payload: { type: 'button', body: bodyText, buttons },
+    ...auditMeta,
+  })
+  return rawSendInteractiveButtons(destination, bodyText, buttons)
+}
 
 const router = express.Router()
 
@@ -206,26 +246,60 @@ function buildRequestEventMessages({
   const bedLabel = ambulanceTypeLabel(request.ambulanceType)
 
   switch (eventType) {
-    case 'driver_assigned':
+    case 'driver_assigned': {
+      // Body is shorter than the text fallback because button labels carry the
+      // CTAs. Buttons live in their own message bubble below the body.
+      const body =
+        `🚑 Driver accepted your emergency request.\n\n` +
+        `Driver: ${driverName}${driverPhone}${vehicleNumber}${trackLine}\n\n` +
+        `Please keep your phone reachable.\n📞 Helpline: ${HELPLINE}`
       return [
-        `🚑 Driver accepted your emergency request.\n\nDriver: ${driverName}${driverPhone}${vehicleNumber}${trackLine}\n\nPlease keep your phone reachable.\n📞 Helpline: ${HELPLINE}`,
+        {
+          kind: 'buttons',
+          body,
+          buttons: [
+            { id: `CALL_DRIVER:${requestId}`, title: '📞 Call driver' },
+            { id: `ADD_NOTE:${requestId}`, title: '📝 Add note' },
+            { id: `CANCEL_REQUEST:${requestId}`, title: '❌ Cancel' },
+          ],
+        },
       ]
+    }
     case 'ambulance_arrived':
       return [
-        `📍 Your ambulance has arrived at your location.\n\nDriver: ${driverName}${driverPhone}${trackLine}\n\nPlease meet the crew or answer their call.\n📞 Helpline: ${HELPLINE}`,
+        {
+          kind: 'text',
+          text: `📍 Your ambulance has arrived at your location.\n\nDriver: ${driverName}${driverPhone}${trackLine}\n\nPlease meet the crew or answer their call.\n📞 Helpline: ${HELPLINE}`,
+        },
       ]
     case 'hospital_selected':
       return [
-        `🏥 Hospital selected for your transfer.\n\nHospital: ${hospitalName}${hospitalAddressLine}\nBed requested: ${bedLabel}${trackLine}\n\nThe ambulance is now proceeding to the hospital.\n📞 Helpline: ${HELPLINE}`,
+        {
+          kind: 'text',
+          text: `🏥 Hospital selected for your transfer.\n\nHospital: ${hospitalName}${hospitalAddressLine}\nBed requested: ${bedLabel}${trackLine}\n\nThe ambulance is now proceeding to the hospital.\n📞 Helpline: ${HELPLINE}`,
+        },
       ]
     case 'hospital_arrived':
       return [
-        `🏥 The ambulance has arrived at ${hospitalName}.\n\nThe hospital team is receiving the patient now.${trackLine}\n📞 Helpline: ${HELPLINE}`,
+        {
+          kind: 'text',
+          text: `🏥 The ambulance has arrived at ${hospitalName}.\n\nThe hospital team is receiving the patient now.${trackLine}\n📞 Helpline: ${HELPLINE}`,
+        },
       ]
-    case 'mission_completed':
+    case 'mission_completed': {
+      const rateLink = `${trackUrl(requestId)}?rate=1`
       return [
-        `✅ Mission complete.\n\nThe patient has been handed over at ${hospitalName}.\nThank you for using Suraksha Kavach.\n📞 Helpline: ${HELPLINE}`,
+        {
+          kind: 'text',
+          text:
+            `✅ Mission complete.\n\n` +
+            `The patient has been handed over at ${hospitalName}.\n` +
+            `Thank you for using Suraksha Kavach.\n\n` +
+            `⭐ *Rate your driver:* ${rateLink}\n` +
+            `📞 Helpline: ${HELPLINE}`,
+        },
       ]
+    }
     default:
       return []
   }
@@ -341,7 +415,52 @@ function parseGupshup(body) {
     return { kind: 'location', from, name: senderName, lat, lng }
   }
 
+  // Gupshup wraps interactive button taps as type='button_reply' with
+  // payload { id, title }. We treat the id as a canonical action string.
+  if (kind === 'button_reply' || kind === 'list_reply') {
+    const id = String(inner.id || inner.postbackText || '')
+    const title = String(inner.title || inner.text || '')
+    if (!id) return null
+    return { kind: 'button_reply', from, name: senderName, id, title }
+  }
+
   return { kind, from, name: senderName }
+}
+
+// Parse "ACTION:requestId" button ids back into structured parts.
+function parseButtonId(id) {
+  const m = String(id || '').match(/^([A-Z_]+):(.+)$/)
+  if (!m) return { action: id || '', requestId: null }
+  return { action: m[1], requestId: m[2] }
+}
+
+async function cancelRescueRequest({ requestId, cancelledBy }) {
+  const ref = db.collection('rescue_requests').doc(requestId)
+  const snap = await ref.get()
+  if (!snap.exists) return { ok: false, reason: 'not_found' }
+  const data = snap.data()
+  if (['completed', 'cancelled'].includes(data.status)) {
+    return { ok: false, reason: 'already_closed', status: data.status }
+  }
+  await ref.set(
+    {
+      status: 'cancelled',
+      cancelReason: 'patient_whatsapp_cancel',
+      cancelledBy: cancelledBy || 'patient_whatsapp',
+      cancelledAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  )
+  // Free the assigned driver if any.
+  if (data.assignedDriverId) {
+    await db
+      .collection('drivers')
+      .doc(data.assignedDriverId)
+      .set({ currentRequestId: null }, { merge: true })
+      .catch(() => {})
+  }
+  return { ok: true }
 }
 
 function normaliseText(raw) {
@@ -372,12 +491,106 @@ router.post('/webhook', async (req, res) => {
     })
     if (!evt || !evt.from) return res.status(200).json({ status: 'ignored' })
 
+    // Mirror every inbound message to the audit collection.
+    await logAudit({
+      direction: 'in',
+      phone: evt.from,
+      summary:
+        evt.kind === 'text'
+          ? evt.text
+          : evt.kind === 'location'
+          ? `[location] ${evt.lat},${evt.lng}`
+          : evt.kind === 'button_reply'
+          ? `[button] ${evt.title} (${evt.id})`
+          : `[${evt.kind}]`,
+      payload: evt,
+      meta: { senderName: evt.name || null },
+    })
+
     const session = await getSession(evt.from)
     await updateDebugTrace(debugRef, {
       eventFrom: evt.from,
       eventKind: evt.kind,
       sessionBefore: sessionSummary(session),
     })
+
+    if (evt.kind === 'button_reply') {
+      const { action, requestId } = parseButtonId(evt.id)
+
+      if (action === 'CALL_DRIVER' && requestId) {
+        const reqSnap = await db
+          .collection('rescue_requests')
+          .doc(requestId)
+          .get()
+        const driverId = reqSnap.exists ? reqSnap.data().assignedDriverId : null
+        const driverSnap = driverId
+          ? await db.collection('drivers').doc(driverId).get()
+          : null
+        const phone = driverSnap?.exists ? driverSnap.data().phone : null
+        if (phone) {
+          await sendText(
+            evt.from,
+            `📞 Tap the driver's number to call:\n\n${phone}`,
+            { requestId, eventType: 'button_call_driver' }
+          )
+        } else {
+          await sendText(
+            evt.from,
+            `Driver phone not available yet. We'll send it as soon as a driver accepts.\n📞 Helpline: ${HELPLINE}`,
+            { requestId, eventType: 'button_call_driver' }
+          )
+        }
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          action: 'button_call_driver',
+          requestId,
+        })
+        return res.status(200).json({ status: 'ok' })
+      }
+
+      if (action === 'ADD_NOTE' && requestId) {
+        await setSession(evt.from, {
+          state: 'adding_note',
+          noteForRequestId: requestId,
+        })
+        await sendText(
+          evt.from,
+          `📝 Send your note in the next message — text or voice — and we'll deliver it to the driver instantly.`,
+          { requestId, eventType: 'button_add_note' }
+        )
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          action: 'button_add_note',
+          requestId,
+        })
+        return res.status(200).json({ status: 'ok' })
+      }
+
+      if (action === 'CANCEL_REQUEST' && requestId) {
+        const result = await cancelRescueRequest({
+          requestId,
+          cancelledBy: `patient:${evt.from}`,
+        })
+        const reply = result.ok
+          ? `✅ Your request has been cancelled. Stay safe.\nReply *menu* if you need help again.`
+          : result.reason === 'already_closed'
+          ? `This request is already ${result.status}.`
+          : `We couldn't cancel that request. Please call ${HELPLINE} if this is urgent.`
+        await sendText(evt.from, reply, {
+          requestId,
+          eventType: 'button_cancel_request',
+        })
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          action: 'button_cancel_request',
+          requestId,
+          cancelResult: result,
+        })
+        return res.status(200).json({ status: 'ok' })
+      }
+
+      // Unknown button id — fall through to the default fallback below.
+    }
 
     if (evt.kind === 'location') {
       const typeCode = session?.selectedAmbulanceType || 'C'
@@ -426,6 +639,54 @@ router.post('/webhook', async (req, res) => {
 
     if (evt.kind === 'text') {
       const text = normaliseText(evt.text)
+
+      // Follow-through for the "Add note" button: persist the next text as a
+      // patient instruction on the linked request, then clear the flag.
+      if (session?.state === 'adding_note' && session?.noteForRequestId) {
+        const noteRequestId = session.noteForRequestId
+        const noteText = String(evt.text || '').trim().slice(0, 500)
+        if (noteText) {
+          const ref = db
+            .collection('rescue_requests')
+            .doc(noteRequestId)
+            .collection('instructions')
+            .doc()
+          await ref.set({
+            id: ref.id,
+            type: 'text',
+            text: noteText,
+            source: 'whatsapp',
+            createdAt: FieldValue.serverTimestamp(),
+          })
+          await db
+            .collection('rescue_requests')
+            .doc(noteRequestId)
+            .set(
+              {
+                lastInstructionAt: FieldValue.serverTimestamp(),
+                instructionCount: FieldValue.increment(1),
+              },
+              { merge: true }
+            )
+        }
+        await setSession(evt.from, {
+          state: 'completed',
+          noteForRequestId: null,
+        })
+        await sendText(
+          evt.from,
+          noteText
+            ? `✅ Note sent to the driver.`
+            : `Note was empty — nothing sent. Reply *menu* if you need help.`,
+          { requestId: noteRequestId, eventType: 'note_via_whatsapp' }
+        )
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          action: 'note_via_whatsapp',
+          requestId: noteRequestId,
+        })
+        return res.status(200).json({ status: 'ok' })
+      }
 
       if (MENU_TO_TYPE[text]) {
         const typeCode = MENU_TO_TYPE[text]
@@ -618,7 +879,17 @@ router.post('/request-event', async (req, res) => {
     }
 
     for (const message of messages) {
-      await sendText(destination, message)
+      const auditMeta = { requestId, eventType }
+      if (message.kind === 'buttons') {
+        await sendInteractiveButtons(
+          destination,
+          message.body,
+          message.buttons,
+          auditMeta
+        )
+      } else {
+        await sendText(destination, message.text, auditMeta)
+      }
     }
 
     await requestRef.set(
