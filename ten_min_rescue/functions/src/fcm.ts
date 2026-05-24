@@ -17,12 +17,14 @@ export interface AlertOptions {
 }
 
 /**
- * Send a high-priority *data-only* push to many devices.
+ * Send a high-priority hybrid push (notification + data) to many devices.
  *
- * Data-only (no top-level `notification` block) means the Flutter app's
- * foreground AND background handlers are always invoked, so the app can
- * raise a full-screen, call-style emergency alert instead of a plain tray
- * notification. The `apns` block keeps delivery reliable on iOS.
+ * The top-level `notification` block lets Android/iOS ring reliably even
+ * when the app process is frozen by OEM battery savers (MIUI, ColorOS,
+ * etc.). The data block carries `requestId` so that — whether the user
+ * taps the system notification or the app's own isolate handles the push
+ * while alive — the app routes to the rich in-app request screen which
+ * fetches the full patient text + voice note from Firestore.
  */
 export async function sendAlert(
   tokens: Array<string | undefined | null>,
@@ -44,7 +46,18 @@ export async function sendAlert(
       messaging.sendEachForMulticast({
         tokens: batch,
         data,
-        android: { priority: "high" },
+        notification: { title: opts.title, body: opts.body },
+        android: {
+          priority: "high",
+          notification: {
+            channelId: "emergency_requests",
+            sound: "default",
+            priority: "max",
+            visibility: "public",
+            defaultVibrateTimings: true,
+            tag: opts.requestId,
+          },
+        },
         apns: {
           headers: {
             "apns-priority": "10",

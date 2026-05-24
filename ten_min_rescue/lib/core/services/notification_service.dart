@@ -131,16 +131,33 @@ class NotificationService {
   /// Foreground pushes can open the in-app full-screen request screen
   /// immediately instead of waiting for a notification tap.
   static Future<void> handleForegroundMessage(RemoteMessage message) =>
-      _handleMessage(message, allowAutoOpen: true);
+      _handleMessage(message, allowAutoOpen: true, isBackground: false);
 
   /// Display — or, for a cancellation, dismiss — a notification built from
   /// an incoming FCM data message.
   static Future<void> handleMessage(RemoteMessage message) =>
-      _handleMessage(message, allowAutoOpen: false);
+      _handleMessage(message, allowAutoOpen: false, isBackground: true);
+
+  /// Routes to the in-app request screen when the user taps a system-shown
+  /// notification (background or terminated state). Defers routing until
+  /// after the first frame so [AppRouter] is ready.
+  static void handleNotificationTap(RemoteMessage message) {
+    final data = message.data;
+    final type = data['type'] ?? '';
+    final requestId = data['requestId'] ?? '';
+    if (requestId.isEmpty) return;
+    final config = _configFor(type, requestId);
+    final route = config?.route;
+    if (route == null || route.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppRouter.router.go(route);
+    });
+  }
 
   static Future<void> _handleMessage(
     RemoteMessage message, {
     required bool allowAutoOpen,
+    required bool isBackground,
   }) async {
     final data = message.data;
     final type = data['type'] ?? '';
@@ -172,13 +189,19 @@ class NotificationService {
               ? message.notification!.body!
               : fallbackBody);
 
-    await _plugin.show(
-      _idFor(requestId),
-      title,
-      body,
-      _detailsFor(config.kind, title),
-      payload: config.route,
-    );
+    // In background, the FCM `notification` block makes Android render the
+    // system notification itself (rings even if our isolate was frozen).
+    // Skip our local notification in that case to avoid a duplicate.
+    final systemAlreadyShowed = isBackground && message.notification != null;
+    if (!systemAlreadyShowed) {
+      await _plugin.show(
+        _idFor(requestId),
+        title,
+        body,
+        _detailsFor(config.kind, title),
+        payload: config.route,
+      );
+    }
 
     if (allowAutoOpen &&
         config.autoOpenInForeground &&

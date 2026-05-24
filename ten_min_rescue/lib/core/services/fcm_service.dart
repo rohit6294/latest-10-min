@@ -28,10 +28,24 @@ class FcmService {
   static final _messaging = FirebaseMessaging.instance;
   static final _firestore = FirestoreService();
 
-  /// Register the foreground push listener. Call once at app startup.
+  /// Register push listeners. Call once at app startup.
+  ///
+  /// - `onMessage` — push arrives while app is foregrounded
+  /// - `onMessageOpenedApp` — user taps a system notification while the app
+  ///    was in the background
+  /// - `getInitialMessage` — user tapped a system notification that
+  ///    cold-started the app from terminated state
   static void setupListeners() {
     FirebaseMessaging.onMessage.listen((message) {
       NotificationService.handleForegroundMessage(message);
+    });
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      NotificationService.handleNotificationTap(message);
+    });
+    _messaging.getInitialMessage().then((message) {
+      if (message != null) {
+        NotificationService.handleNotificationTap(message);
+      }
     });
   }
 

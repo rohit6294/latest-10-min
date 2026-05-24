@@ -23,7 +23,18 @@ async function sendAlert(tokens, opts) {
       messaging.sendEachForMulticast({
         tokens: batch,
         data,
-        android: { priority: 'high' },
+        notification: { title: opts.title, body: opts.body },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'emergency_requests',
+            sound: 'default',
+            priority: 'max',
+            visibility: 'public',
+            defaultVibrateTimings: true,
+            tag: opts.requestId,
+          },
+        },
         apns: {
           headers: { 'apns-priority': '10', 'apns-push-type': 'alert' },
           payload: {
