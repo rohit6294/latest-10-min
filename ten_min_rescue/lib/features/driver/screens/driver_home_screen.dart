@@ -68,6 +68,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     if (_navigating) return;
 
     for (final req in requests) {
+      if (!req.notifiedDriverIds.contains(_uid)) continue;
       // Filter by ambulance type
       if (req.ambulanceType != driver.ambulanceType) continue;
       if (req.declinedDriverIds.contains(_uid)) continue;

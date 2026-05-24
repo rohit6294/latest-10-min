@@ -57,20 +57,21 @@ function sendLocationRequest(destination, bodyText) {
   })
 }
 
-// Interactive quick-reply buttons. WhatsApp Cloud API caps at 3 buttons.
+// Interactive quick replies for Gupshup's WhatsApp API.
 // `buttons` is an array of { id, title } (title max 20 chars).
 function sendInteractiveButtons(destination, bodyText, buttons) {
   const trimmed = (buttons || []).slice(0, 3).map((b) => ({
-    type: 'reply',
-    reply: {
-      id: String(b.id).slice(0, 256),
-      title: String(b.title).slice(0, 20),
-    },
+    type: 'text',
+    title: String(b.title).slice(0, 20),
+    postbackText: String(b.id).slice(0, 256),
   }))
   return sendMessage(destination, {
-    type: 'button',
-    body: { type: 'text', text: bodyText },
-    action: { buttons: trimmed },
+    type: 'quick_reply',
+    content: {
+      type: 'text',
+      text: bodyText,
+    },
+    options: trimmed,
   })
 }
 

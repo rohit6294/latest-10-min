@@ -545,11 +545,15 @@ export default function TrackPage() {
           </div>
         )}
 
-        {/* Patient instructions for the driver — text + voice */}
-        {hasDriver && req.status !== 'completed' && req.status !== 'cancelled' && (
+        {/* Patient instructions for the driver — text + voice.
+            Shown for the entire active lifecycle (even before a driver is
+            assigned) so the patient can both *send* and *review* their own
+            notes/voice clips, including ones sent earlier via WhatsApp. */}
+        {req.status !== 'completed' && req.status !== 'cancelled' && (
           <InstructionsPanel
             requestId={requestId}
             instructions={instructions}
+            hasDriver={hasDriver}
           />
         )}
 
@@ -641,7 +645,7 @@ export default function TrackPage() {
 // recording (browser MediaRecorder, uploaded via the backend so the patient
 // stays anonymous to Firebase Storage rules).
 
-function InstructionsPanel({ requestId, instructions }) {
+function InstructionsPanel({ requestId, instructions, hasDriver = true }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -765,7 +769,7 @@ function InstructionsPanel({ requestId, instructions }) {
     <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">
-          Send extra info to driver
+          {hasDriver ? 'Send extra info to driver' : 'Send extra info (driver will see this once assigned)'}
         </span>
       </div>
       <p className="text-xs text-gray-500 mb-3">
@@ -858,10 +862,17 @@ function InstructionsPanel({ requestId, instructions }) {
         </div>
       )}
 
-      {instructions.length > 0 && (
+      {instructions.length > 0 ? (
         <div className="mt-4 space-y-2">
-          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            Sent ({instructions.length})
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+              Your notes & voice clips ({instructions.length})
+            </div>
+            {!hasDriver && (
+              <div className="text-[10px] text-amber-600 font-semibold">
+                Waiting for driver
+              </div>
+            )}
           </div>
           {instructions.map((it) => (
             <InstructionRow
@@ -870,6 +881,10 @@ function InstructionsPanel({ requestId, instructions }) {
               requestId={requestId}
             />
           ))}
+        </div>
+      ) : (
+        <div className="mt-3 text-[11px] text-gray-400 italic">
+          You haven't sent any notes yet. Anything you send (here or on WhatsApp) shows up below.
         </div>
       )}
     </div>

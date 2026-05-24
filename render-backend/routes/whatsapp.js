@@ -46,7 +46,7 @@ async function sendInteractiveButtons(destination, bodyText, buttons, auditMeta 
     direction: 'out',
     phone: destination,
     summary: `[buttons] ${bodyText}`,
-    payload: { type: 'button', body: bodyText, buttons },
+    payload: { type: 'quick_reply', body: bodyText, buttons },
     ...auditMeta,
   })
   return rawSendInteractiveButtons(destination, bodyText, buttons)
@@ -258,9 +258,9 @@ function buildRequestEventMessages({
           kind: 'buttons',
           body,
           buttons: [
-            { id: `CALL_DRIVER:${requestId}`, title: '📞 Call driver' },
-            { id: `ADD_NOTE:${requestId}`, title: '📝 Add note' },
-            { id: `CANCEL_REQUEST:${requestId}`, title: '❌ Cancel' },
+            { id: `CALL_DRIVER:${requestId}`, title: 'Call driver' },
+            { id: `ADD_NOTE:${requestId}`, title: 'Add note' },
+            { id: `CANCEL_REQUEST:${requestId}`, title: 'Cancel' },
           ],
         },
       ]
@@ -361,6 +361,34 @@ async function applyHospitalProjection({
   ])
 }
 
+async function applyDriverProjection({
+  requestRef,
+  requestId,
+  driverId,
+  driver,
+}) {
+  if (!driverId || !driver) return
+
+  await Promise.all([
+    requestRef.set(
+      {
+        driverName: driver.name || '',
+        driverPhone: driver.phone || '',
+        driverVehicleNumber: driver.vehicleNumber || '',
+        driverAmbulanceType: driver.ambulanceType || '',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    ),
+    db.doc(`drivers/${driverId}`).set(
+      {
+        currentRequestId: requestId,
+      },
+      { merge: true }
+    ),
+  ])
+}
+
 async function createRescueFromWhatsApp({
   from,
   name,
@@ -443,13 +471,30 @@ function parseGupshup(body) {
     return { kind: 'location', from, name: senderName, lat, lng }
   }
 
-  // Gupshup wraps interactive button taps as type='button_reply' with
-  // payload { id, title }. We treat the id as a canonical action string.
-  if (kind === 'button_reply' || kind === 'list_reply') {
-    const id = String(inner.id || inner.postbackText || '')
-    const title = String(inner.title || inner.text || '')
+  // Gupshup quick replies expose the developer payload via `postbackText`.
+  // Some accounts still emit Meta-style button/list wrappers, so normalize
+  // both shapes into one internal button_reply event.
+  if (kind === 'quick_reply' || kind === 'button_reply' || kind === 'list_reply') {
+    const id = String(
+      inner.postbackText || inner.id || inner.reply || inner.text || ''
+    )
+    const title = String(inner.title || inner.reply || inner.text || '')
     if (!id) return null
     return { kind: 'button_reply', from, name: senderName, id, title }
+  }
+
+  // Voice / audio note from the patient — used when they tap "Add note" and
+  // record a voice clip in WhatsApp. Gupshup posts a downloadable URL.
+  if (kind === 'audio' || kind === 'voice') {
+    const url = String(inner.url || inner.audio?.url || '')
+    if (!url) return null
+    return {
+      kind: 'audio',
+      from,
+      name: senderName,
+      url,
+      mimeType: String(inner.contentType || inner.mimeType || 'audio/ogg'),
+    }
   }
 
   return { kind, from, name: senderName }
@@ -663,6 +708,89 @@ router.post('/webhook', async (req, res) => {
       })
 
       return res.status(200).json({ status: 'ok', requestId })
+    }
+
+    // Voice note from WhatsApp during "Add note" flow → store as inline
+    // base64 instruction so it shows up on both driver app & patient tracking.
+    if (evt.kind === 'audio') {
+      const noteRequestId = session?.noteForRequestId || session?.lastRequestId
+      if (!noteRequestId) {
+        await sendText(
+          evt.from,
+          `🎤 We received a voice note but couldn't find an active request to attach it to. Reply *menu* to start a new request.`
+        )
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          action: 'audio_no_request',
+        })
+        return res.status(200).json({ status: 'ok' })
+      }
+
+      try {
+        const resp = await fetch(evt.url)
+        if (!resp.ok) throw new Error(`download ${resp.status}`)
+        const buf = Buffer.from(await resp.arrayBuffer())
+        // ~700 KB hard cap so we stay inside the Firestore 1 MB doc limit.
+        if (buf.length > 700 * 1024) {
+          await sendText(
+            evt.from,
+            `🎤 Voice note too long. Please send a shorter clip (under ~30 seconds).`
+          )
+          return res.status(200).json({ status: 'ok' })
+        }
+        const base64 = buf.toString('base64')
+        const ref = db
+          .collection('rescue_requests')
+          .doc(noteRequestId)
+          .collection('instructions')
+          .doc()
+        await ref.set({
+          id: ref.id,
+          type: 'audio',
+          source: 'whatsapp',
+          mimeType: evt.mimeType || 'audio/ogg',
+          audioBase64: base64,
+          durationSec: 0,
+          createdAt: FieldValue.serverTimestamp(),
+        })
+        await db
+          .collection('rescue_requests')
+          .doc(noteRequestId)
+          .set(
+            {
+              lastInstructionAt: FieldValue.serverTimestamp(),
+              instructionCount: FieldValue.increment(1),
+            },
+            { merge: true }
+          )
+        await setSession(evt.from, {
+          state: 'completed',
+          noteForRequestId: null,
+        })
+        await sendText(
+          evt.from,
+          `🎤 Voice note delivered to the driver.`,
+          { requestId: noteRequestId, eventType: 'voice_via_whatsapp' }
+        )
+        await updateDebugTrace(debugRef, {
+          status: 'ok',
+          action: 'voice_via_whatsapp',
+          requestId: noteRequestId,
+          bytes: buf.length,
+        })
+      } catch (err) {
+        console.error('whatsapp audio handling failed:', err)
+        await sendText(
+          evt.from,
+          `Couldn't process your voice note. Please type the message instead.`
+        )
+        await updateDebugTrace(debugRef, {
+          status: 'error',
+          action: 'voice_via_whatsapp',
+          errorMessage: err.message,
+        })
+      }
+      return res.status(200).json({ status: 'ok' })
     }
 
     if (evt.kind === 'text') {
@@ -883,6 +1011,15 @@ router.post('/request-event', async (req, res) => {
     const destination = normalizePhoneForWhatsApp(request.patientPhone)
     if (!destination) {
       return res.json({ ok: true, skipped: true, reason: 'no_patient_phone' })
+    }
+
+    if (request.assignedDriverId && driver) {
+      await applyDriverProjection({
+        requestRef,
+        requestId,
+        driverId: request.assignedDriverId,
+        driver,
+      })
     }
 
     if (eventType === 'hospital_selected' && request.assignedHospitalId && hospital) {

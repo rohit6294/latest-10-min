@@ -237,10 +237,22 @@ class FirestoreService {
       accepted = true;
     });
     if (accepted) {
-      await _db.doc(FirestorePaths.driver(driverId)).update({
-        'isAvailable': false,
-        'currentRequestId': requestId,
-      });
+      final driver = await getDriver(driverId);
+      await Future.wait([
+        _db.doc(FirestorePaths.driver(driverId)).update({
+          'isAvailable': false,
+          'currentRequestId': requestId,
+        }),
+        _db.doc(FirestorePaths.rescueRequest(requestId)).set({
+          'updatedAt': FieldValue.serverTimestamp(),
+          'driverName': driver?.name ?? '',
+          'driverPhone': driver?.phone ?? '',
+          'driverVehicleNumber': driver?.vehicleNumber ?? '',
+          'driverAmbulanceType': driver != null
+              ? driver.ambulanceType.value
+              : '',
+        }, SetOptions(merge: true)),
+      ]);
       await _notifyWhatsappEventBestEffort(requestId, 'driver_assigned');
     }
     return accepted;
@@ -324,13 +336,12 @@ class FirestoreService {
       .collection('instructions')
       .orderBy('createdAt')
       .snapshots()
-      .map((snap) => snap.docs.map((d) {
-            final data = d.data();
-            return {
-              'id': d.id,
-              ...data,
-            };
-          }).toList());
+      .map(
+        (snap) => snap.docs.map((d) {
+          final data = d.data();
+          return {'id': d.id, ...data};
+        }).toList(),
+      );
 
   // ─── Equipment checklist ─────────────────────────────────────────────────
 

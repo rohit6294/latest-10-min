@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,6 +27,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
 
   int _secondsLeft = 30;
   Timer? _countdownTimer;
+  Timer? _attentionTimer;
   late AnimationController _pulseController;
   bool _accepting = false;
   bool _closing = false;
@@ -38,6 +40,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
       duration: const Duration(milliseconds: 800),
     )..repeat(reverse: true);
     _startCountdown();
+    _startAttentionLoop();
   }
 
   void _startCountdown() {
@@ -51,10 +54,33 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
     });
   }
 
+  void _startAttentionLoop() {
+    _attentionTimer?.cancel();
+    unawaited(_grabAttention());
+    _attentionTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (_closing || _accepting || _secondsLeft <= 0) {
+        timer.cancel();
+        return;
+      }
+      unawaited(_grabAttention());
+    });
+  }
+
+  Future<void> _grabAttention() async {
+    await HapticFeedback.vibrate();
+    await SystemSound.play(SystemSoundType.alert);
+  }
+
+  void _stopAttentionLoop() {
+    _attentionTimer?.cancel();
+    _attentionTimer = null;
+  }
+
   Future<void> _accept(RescueRequestModel request) async {
     if (_accepting || _closing) return;
     setState(() => _accepting = true);
     _countdownTimer?.cancel();
+    _stopAttentionLoop();
     await NotificationService.dismissRequestNotification(widget.requestId);
 
     try {
@@ -99,6 +125,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
     if (_closing) return;
     _closing = true;
     _countdownTimer?.cancel();
+    _stopAttentionLoop();
     await NotificationService.dismissRequestNotification(widget.requestId);
 
     try {
@@ -140,10 +167,14 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
   /// drivers = mismatch in dispatch logic; on-break = scheduling).
   Future<void> _decline() async {
     _countdownTimer?.cancel();
+    _stopAttentionLoop();
     final picked = await _showRefusalReasonSheet();
     if (picked == null) {
       // User backed out of the sheet — resume countdown.
-      if (mounted && !_closing) _startCountdown();
+      if (mounted && !_closing) {
+        _startCountdown();
+        _startAttentionLoop();
+      }
       return;
     }
     await _ignoreAndExit(
@@ -326,6 +357,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _stopAttentionLoop();
     _pulseController.dispose();
     super.dispose();
   }
@@ -362,10 +394,9 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
           canPop: false,
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) {
-              unawaited(_ignoreAndExit(
-                showFeedback: false,
-                reason: 'back_dismissed',
-              ));
+              unawaited(
+                _ignoreAndExit(showFeedback: false, reason: 'back_dismissed'),
+              );
             }
           },
           child: Scaffold(

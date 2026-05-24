@@ -43,6 +43,15 @@ export async function findNearbyDriversInternal(
   params: NearbySearchParams
 ): Promise<{ notified: number }> {
   const { requestId, lat, lng, searchRadius, alreadyNotified } = params;
+  const requestSnap = await db.collection("rescue_requests").doc(requestId).get();
+  const request = requestSnap.data() || {};
+  const declinedDriverIds = new Set(
+    ((request.declinedDriverIds as string[]) || [])
+  );
+  const requiredAmbulanceType =
+    (request.ambulanceType as string | undefined) || null;
+  const seenDriverIds = new Set(alreadyNotified || []);
+  const seenTokens = new Set<string>();
 
   const bounds = geohashQueryBounds([lat, lng], searchRadius * 1000);
   const snapshots = await Promise.all(
@@ -67,13 +76,30 @@ export async function findNearbyDriversInternal(
         | admin.firestore.GeoPoint
         | undefined;
       if (!driverLoc) continue;
+      if (
+        requiredAmbulanceType &&
+        driver.ambulanceType !== requiredAmbulanceType
+      ) {
+        continue;
+      }
       const dist = distanceBetween(
         [driverLoc.latitude, driverLoc.longitude],
         [lat, lng]
       );
-      if (dist <= searchRadius && !alreadyNotified.includes(doc.id)) {
+      if (
+        dist <= searchRadius &&
+        !seenDriverIds.has(doc.id) &&
+        !declinedDriverIds.has(doc.id)
+      ) {
+        seenDriverIds.add(doc.id);
         newDriverIds.push(doc.id);
-        if (driver.fcmToken) fcmTokens.push(driver.fcmToken as string);
+        if (
+          driver.fcmToken &&
+          !seenTokens.has(driver.fcmToken as string)
+        ) {
+          seenTokens.add(driver.fcmToken as string);
+          fcmTokens.push(driver.fcmToken as string);
+        }
       }
     }
   }
@@ -84,11 +110,7 @@ export async function findNearbyDriversInternal(
         admin.firestore.FieldValue.arrayUnion(...newDriverIds),
     });
 
-    const reqSnap = await db
-      .collection("rescue_requests")
-      .doc(requestId)
-      .get();
-    const { title, body } = buildAlertText(reqSnap.data());
+    const { title, body } = buildAlertText(request);
 
     await sendAlert(fcmTokens, {
       type: "incoming_request",

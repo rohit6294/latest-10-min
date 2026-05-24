@@ -8,7 +8,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../../../core/services/firestore_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/routing_service.dart';
@@ -36,6 +38,8 @@ class _NavigateToHospitalScreenState extends State<NavigateToHospitalScreen> {
   HospitalModel? _hospital;
   bool _completing = false;
   bool _markedInTransit = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _playingInstructionId;
 
   // Routing
   List<LatLng> _routePoints = [];
@@ -129,6 +133,41 @@ class _NavigateToHospitalScreenState extends State<NavigateToHospitalScreen> {
     final uri = Uri.parse('tel:$phone');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
+    }
+  }
+
+  Future<void> _playVoiceNote(Map<String, dynamic> instruction) async {
+    final id = instruction['id'] as String?;
+    final url = instruction['audioUrl'] as String?;
+    final b64 = instruction['audioBase64'] as String?;
+    final mime = instruction['mimeType'] as String? ?? 'audio/webm';
+    try {
+      if (_playingInstructionId == id) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _playingInstructionId = null);
+        return;
+      }
+      await _audioPlayer.stop();
+      if (url != null && url.isNotEmpty) {
+        await _audioPlayer.play(UrlSource(url));
+      } else if (b64 != null && b64.isNotEmpty) {
+        await _audioPlayer.play(BytesSource(base64Decode(b64), mimeType: mime));
+      } else {
+        return;
+      }
+      if (mounted) setState(() => _playingInstructionId = id);
+      _audioPlayer.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _playingInstructionId = null);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not play voice note: $e'),
+            backgroundColor: AppColors.brandRed,
+          ),
+        );
+      }
     }
   }
 
@@ -408,6 +447,7 @@ class _NavigateToHospitalScreenState extends State<NavigateToHospitalScreen> {
     WakelockPlus.disable();
     _routeRefreshTimer?.cancel();
     _locationService.stopTracking();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -734,6 +774,12 @@ class _NavigateToHospitalScreenState extends State<NavigateToHospitalScreen> {
                           ),
                         ),
                       const SizedBox(height: 12),
+                      _HospitalLegInstructionsStripe(
+                        requestId: widget.requestId,
+                        onPlayAudio: _playVoiceNote,
+                        playingInstructionId: _playingInstructionId,
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           _chip(
@@ -915,4 +961,191 @@ class _NavigateToHospitalScreenState extends State<NavigateToHospitalScreen> {
       ),
     );
   }
+}
+
+class _HospitalLegInstructionsStripe extends StatelessWidget {
+  final String requestId;
+  final Future<void> Function(Map<String, dynamic> instruction) onPlayAudio;
+  final String? playingInstructionId;
+
+  const _HospitalLegInstructionsStripe({
+    required this.requestId,
+    required this.onPlayAudio,
+    this.playingInstructionId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirestoreService().watchInstructions(requestId),
+      builder: (context, snap) {
+        final items = snap.data ?? const <Map<String, dynamic>>[];
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppColors.accentBlue.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.accentBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 14,
+                    color: AppColors.accentBlue,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'PATIENT NOTES (${items.length})',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.accentBlue,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ...items.map(
+                (it) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: _hospitalLegInstructionRow(it),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _hospitalLegInstructionRow(Map<String, dynamic> it) {
+    final type = it['type'] as String? ?? 'text';
+    final stamp = _hospitalLegRelativeTime(it['createdAt']);
+    final stampWidget = stamp.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                stamp,
+                style: GoogleFonts.poppins(
+                  color: AppColors.textLight,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          );
+
+    if (type == 'audio') {
+      final id = it['id'] as String?;
+      final url = it['audioUrl'] as String?;
+      final b64 = it['audioBase64'] as String?;
+      final dur = (it['durationSec'] as num?)?.toInt() ?? 0;
+      final hasAudio =
+          (url != null && url.isNotEmpty) || (b64 != null && b64.isNotEmpty);
+      final isPlaying = id != null && id == playingInstructionId;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.mic_rounded,
+                size: 16,
+                color: AppColors.brandRed,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Voice note · ${dur}s',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.navy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (hasAudio)
+                TextButton.icon(
+                  onPressed: () => onPlayAudio(it),
+                  icon: Icon(
+                    isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                    size: 18,
+                  ),
+                  label: Text(isPlaying ? 'Stop' : 'Play'),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: AppColors.accentBlue,
+                  ),
+                ),
+            ],
+          ),
+          stampWidget,
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.sticky_note_2_outlined,
+              size: 16,
+              color: AppColors.accentBlue,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                (it['text'] as String? ?? '').trim(),
+                style: GoogleFonts.poppins(
+                  color: AppColors.navy,
+                  fontSize: 12,
+                  height: 1.35,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        stampWidget,
+      ],
+    );
+  }
+}
+
+String _hospitalLegRelativeTime(dynamic createdAt) {
+  DateTime? when;
+  if (createdAt is Timestamp) {
+    when = createdAt.toDate();
+  } else if (createdAt is DateTime) {
+    when = createdAt;
+  } else if (createdAt is Map && createdAt['seconds'] != null) {
+    when = DateTime.fromMillisecondsSinceEpoch(
+      (createdAt['seconds'] as num).toInt() * 1000,
+    );
+  }
+  if (when == null) return '';
+  final diff = DateTime.now().difference(when);
+  if (diff.isNegative) return 'just now';
+  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
 }

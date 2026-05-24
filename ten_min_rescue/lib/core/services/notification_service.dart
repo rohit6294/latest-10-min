@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../router/app_router.dart';
@@ -10,6 +11,20 @@ import '../router/app_router.dart';
 /// start via [NotificationService.consumeLaunchRoute].
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {}
+
+enum _NotificationKind { emergency, update }
+
+class _NotificationConfig {
+  final _NotificationKind kind;
+  final String? route;
+  final bool autoOpenInForeground;
+
+  const _NotificationConfig({
+    required this.kind,
+    this.route,
+    this.autoOpenInForeground = false,
+  });
+}
 
 /// Builds and displays local notifications — including the loud, call-style
 /// full-screen alert shown for a new ambulance/patient request.
@@ -23,6 +38,10 @@ class NotificationService {
   static const String _channelName = 'Emergency Requests';
   static const String _channelDesc =
       'Loud, full-screen alerts for new ambulance and patient requests';
+  static const String _updatesChannelId = 'request_updates';
+  static const String _updatesChannelName = 'Request Updates';
+  static const String _updatesChannelDesc =
+      'Patient instructions and trip updates';
 
   static bool _initialized = false;
   static String? _launchRoute;
@@ -62,6 +81,16 @@ class NotificationService {
         audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     );
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _updatesChannelId,
+        _updatesChannelName,
+        description: _updatesChannelDesc,
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
 
     // Capture a notification tap that cold-started the app.
     final launch = await _plugin.getNotificationAppLaunchDetails();
@@ -99,9 +128,20 @@ class NotificationService {
     await _plugin.cancel(_idFor(requestId));
   }
 
+  /// Foreground pushes can open the in-app full-screen request screen
+  /// immediately instead of waiting for a notification tap.
+  static Future<void> handleForegroundMessage(RemoteMessage message) =>
+      _handleMessage(message, allowAutoOpen: true);
+
   /// Display — or, for a cancellation, dismiss — a notification built from
   /// an incoming FCM data message.
-  static Future<void> handleMessage(RemoteMessage message) async {
+  static Future<void> handleMessage(RemoteMessage message) =>
+      _handleMessage(message, allowAutoOpen: false);
+
+  static Future<void> _handleMessage(
+    RemoteMessage message, {
+    required bool allowAutoOpen,
+  }) async {
     final data = message.data;
     final type = data['type'] ?? '';
     final requestId = data['requestId'] ?? '';
@@ -112,54 +152,126 @@ class NotificationService {
       return;
     }
 
-    final route = _routeFor(type, requestId);
+    final config = _configFor(type, requestId);
+    if (config == null) return;
+
+    final fallbackTitle = config.kind == _NotificationKind.emergency
+        ? 'Emergency request'
+        : 'Request update';
+    final fallbackBody = config.kind == _NotificationKind.emergency
+        ? 'Tap to respond'
+        : 'Open the app to review the update';
     final title = (data['title'] ?? '').isNotEmpty
         ? data['title']!
-        : 'Emergency request';
+        : ((message.notification?.title ?? '').isNotEmpty
+              ? message.notification!.title!
+              : fallbackTitle);
     final body = (data['body'] ?? '').isNotEmpty
         ? data['body']!
-        : 'Tap to respond';
-
-    final androidDetails = AndroidNotificationDetails(
-      emergencyChannelId,
-      _channelName,
-      channelDescription: _channelDesc,
-      importance: Importance.max,
-      priority: Priority.max,
-      category: AndroidNotificationCategory.call,
-      fullScreenIntent: true,
-      visibility: NotificationVisibility.public,
-      playSound: true,
-      enableVibration: true,
-      vibrationPattern: Int64List.fromList(<int>[0, 600, 300, 600, 300, 600]),
-      audioAttributesUsage: AudioAttributesUsage.alarm,
-      ticker: title,
-      autoCancel: true,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
-    );
+        : ((message.notification?.body ?? '').isNotEmpty
+              ? message.notification!.body!
+              : fallbackBody);
 
     await _plugin.show(
       _idFor(requestId),
       title,
       body,
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
-      payload: route,
+      _detailsFor(config.kind, title),
+      payload: config.route,
     );
+
+    if (allowAutoOpen &&
+        config.autoOpenInForeground &&
+        config.route != null &&
+        config.route!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final currentLocation = AppRouter
+            .router
+            .routeInformationProvider
+            .value
+            .uri
+            .toString();
+        if (currentLocation != config.route) {
+          AppRouter.router.go(config.route!);
+        }
+      });
+    }
   }
 
-  static String _routeFor(String type, String requestId) {
+  static NotificationDetails _detailsFor(_NotificationKind kind, String title) {
+    final androidDetails = kind == _NotificationKind.emergency
+        ? AndroidNotificationDetails(
+            emergencyChannelId,
+            _channelName,
+            channelDescription: _channelDesc,
+            importance: Importance.max,
+            priority: Priority.max,
+            category: AndroidNotificationCategory.call,
+            fullScreenIntent: true,
+            visibility: NotificationVisibility.public,
+            playSound: true,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList(<int>[
+              0,
+              600,
+              300,
+              600,
+              300,
+              600,
+            ]),
+            audioAttributesUsage: AudioAttributesUsage.alarm,
+            ticker: title,
+            autoCancel: true,
+          )
+        : AndroidNotificationDetails(
+            _updatesChannelId,
+            _updatesChannelName,
+            channelDescription: _updatesChannelDesc,
+            importance: Importance.high,
+            priority: Priority.high,
+            category: AndroidNotificationCategory.message,
+            visibility: NotificationVisibility.private,
+            playSound: true,
+            enableVibration: true,
+            ticker: title,
+            autoCancel: true,
+          );
+
+    final iosDetails = kind == _NotificationKind.emergency
+        ? const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
+          )
+        : const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.active,
+          );
+
+    return NotificationDetails(android: androidDetails, iOS: iosDetails);
+  }
+
+  static _NotificationConfig? _configFor(String type, String requestId) {
     switch (type) {
       case 'incoming_ambulance':
-        return '/hospital/incoming/$requestId';
+        return _NotificationConfig(
+          kind: _NotificationKind.emergency,
+          route: '/hospital/incoming/$requestId',
+          autoOpenInForeground: true,
+        );
       case 'incoming_request':
+        return _NotificationConfig(
+          kind: _NotificationKind.emergency,
+          route: '/driver/request/$requestId',
+          autoOpenInForeground: true,
+        );
+      case 'patient_instruction':
+        return const _NotificationConfig(kind: _NotificationKind.update);
       default:
-        return '/driver/request/$requestId';
+        return null;
     }
   }
 

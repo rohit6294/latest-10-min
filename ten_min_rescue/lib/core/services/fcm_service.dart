@@ -31,7 +31,7 @@ class FcmService {
   /// Register the foreground push listener. Call once at app startup.
   static void setupListeners() {
     FirebaseMessaging.onMessage.listen((message) {
-      NotificationService.handleMessage(message);
+      NotificationService.handleForegroundMessage(message);
     });
   }
 
@@ -42,18 +42,14 @@ class FcmService {
 
   /// Request permission and save the FCM token on the hospital's document.
   static Future<void> initForHospital(String hospitalId) => _registerToken(
-        (token) => _firestore.saveHospitalFcmToken(hospitalId, token),
-      );
+    (token) => _firestore.saveHospitalFcmToken(hospitalId, token),
+  );
 
   static Future<void> _registerToken(
     Future<void> Function(String token) save,
   ) async {
     try {
-      await _messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
+      await _messaging.requestPermission(alert: true, badge: true, sound: true);
       await NotificationService.requestPermission();
 
       // iOS: the APNs token must be ready before requesting the FCM token,

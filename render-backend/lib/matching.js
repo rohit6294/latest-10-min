@@ -20,6 +20,13 @@ function buildDriverAlertText(request) {
 }
 
 async function findAndNotifyDrivers({ requestId, lat, lng, searchRadius, alreadyNotified }) {
+  const requestSnap = await db.collection('rescue_requests').doc(requestId).get()
+  const request = requestSnap.data() || {}
+  const declinedDriverIds = new Set(request.declinedDriverIds || [])
+  const requiredAmbulanceType = request.ambulanceType || null
+  const seenDriverIds = new Set(alreadyNotified || [])
+  const seenTokens = new Set()
+
   const bounds = geohashQueryBounds([lat, lng], searchRadius * 1000)
   const snapshots = await Promise.all(
     bounds.map((b) =>
@@ -41,13 +48,24 @@ async function findAndNotifyDrivers({ requestId, lat, lng, searchRadius, already
       const driver = doc.data()
       const driverLoc = driver.location
       if (!driverLoc) continue
+      if (requiredAmbulanceType && driver.ambulanceType !== requiredAmbulanceType) {
+        continue
+      }
       const dist = distanceBetween(
         [driverLoc.latitude, driverLoc.longitude],
         [lat, lng]
       )
-      if (dist <= searchRadius && !alreadyNotified.includes(doc.id)) {
+      if (
+        dist <= searchRadius &&
+        !seenDriverIds.has(doc.id) &&
+        !declinedDriverIds.has(doc.id)
+      ) {
+        seenDriverIds.add(doc.id)
         newDriverIds.push(doc.id)
-        if (driver.fcmToken) fcmTokens.push(driver.fcmToken)
+        if (driver.fcmToken && !seenTokens.has(driver.fcmToken)) {
+          seenTokens.add(driver.fcmToken)
+          fcmTokens.push(driver.fcmToken)
+        }
       }
     }
   }
@@ -60,8 +78,7 @@ async function findAndNotifyDrivers({ requestId, lat, lng, searchRadius, already
         notifiedDriverIds: FieldValue.arrayUnion(...newDriverIds),
       })
 
-    const reqSnap = await db.collection('rescue_requests').doc(requestId).get()
-    const { title, body } = buildDriverAlertText(reqSnap.data())
+    const { title, body } = buildDriverAlertText(request)
 
     await sendAlert(fcmTokens, {
       type: 'incoming_request',
