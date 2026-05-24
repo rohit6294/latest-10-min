@@ -133,6 +133,11 @@ service cloud.firestore {
       // verified against the server clock so device-time manipulation can't
       // bypass it. Subsequent updates (status transitions, hospital select,
       // completion) don't re-check freshness — only the initial claim does.
+      // The driverName/driverPhone/driverVehicleNumber/driverAmbulanceType
+      // keys denormalize the driver's profile onto the request so the public
+      // TrackPage (unauthenticated) can show a tap-to-call button without
+      // needing to read the drivers collection. declineLog is a structured
+      // audit trail appended on every refusal — separate from declinedDriverIds.
       allow update: if isDriver()
         && (resource.data.assignedDriverId == null
             || resource.data.assignedDriverId == request.auth.uid)
@@ -142,7 +147,9 @@ service cloud.firestore {
           'assignedHospitalId', 'hospitalChosenBy',
           'assignedHospitalAcceptedAt', 'inTransitAt', 'completedAt',
           'driverCancellationReason', 'driverCancelledAt', 'updatedAt',
-          'ambulanceType', 'declinedDriverIds'
+          'ambulanceType', 'declinedDriverIds', 'declineLog',
+          'driverName', 'driverPhone', 'driverVehicleNumber',
+          'driverAmbulanceType'
         ])
         && (!isDriverClaim() || hasFreshEquipmentCheck());
 

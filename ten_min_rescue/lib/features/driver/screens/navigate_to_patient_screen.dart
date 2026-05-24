@@ -705,6 +705,9 @@ class _InstructionsStripe extends StatelessWidget {
       builder: (context, snap) {
         final items = snap.data ?? const <Map<String, dynamic>>[];
         if (items.isEmpty) return const SizedBox.shrink();
+        // Cap the list area at ~30% of the screen so a chatty patient cannot
+        // push the action buttons off-screen. Long lists scroll inside the card.
+        final maxListHeight = MediaQuery.of(context).size.height * 0.3;
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Container(
@@ -718,6 +721,7 @@ class _InstructionsStripe extends StatelessWidget {
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
@@ -739,10 +743,21 @@ class _InstructionsStripe extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                ...items.map(
-                  (it) => Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: _instructionRow(it),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxListHeight),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: items
+                          .map(
+                            (it) => Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: _instructionRow(it),
+                            ),
+                          )
+                          .toList(),
+                    ),
                   ),
                 ),
               ],

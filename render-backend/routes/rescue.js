@@ -96,6 +96,9 @@ router.post('/rate', async (req, res) => {
     const requestRef = db.collection('rescue_requests').doc(requestId)
 
     let driverId = null
+    // Firestore transactions require all reads before any writes. We read the
+    // request first to learn the driverId, then (still in the same transaction)
+    // read the driver doc before issuing any tx.update / tx.set calls.
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(requestRef)
       if (!snap.exists) {
@@ -115,16 +118,23 @@ router.post('/rate', async (req, res) => {
         throw err
       }
       driverId = data.assignedDriverId
+
+      let driverRef = null
+      let dd = null
+      if (driverId) {
+        driverRef = db.collection('drivers').doc(driverId)
+        const driverSnap = await tx.get(driverRef)
+        dd = driverSnap.data() || {}
+      }
+
+      // ---- All writes below this line ----
       tx.update(requestRef, {
         patientRating: r,
         patientRatingComment: (comment || '').slice(0, 500),
         patientRatedAt: FieldValue.serverTimestamp(),
       })
 
-      if (driverId) {
-        const driverRef = db.collection('drivers').doc(driverId)
-        const driverSnap = await tx.get(driverRef)
-        const dd = driverSnap.data() || {}
+      if (driverRef) {
         const prevTotal = Number(dd.totalRatings) || 0
         const prevAvg = Number(dd.rating) || 0
         const newTotal = prevTotal + 1
@@ -345,6 +355,92 @@ router.post('/instruction/delete', async (req, res) => {
   } catch (e) {
     console.error('instruction delete error:', e)
     return res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Patient cancels their own request from the public TrackPage ────────────
+//
+// Body: { requestId, reason? }
+// The TrackPage is unauthenticated (the secret request ID is the only
+// credential), so we run this server-side with admin privileges rather than
+// loosening the Firestore update rule. Refuses to cancel a request that has
+// already been completed or cancelled. If a driver was assigned, frees the
+// driver and notifies their app (FCM + WhatsApp).
+router.post('/cancel', async (req, res) => {
+  try {
+    const { requestId, reason } = req.body || {}
+    if (!requestId) return res.status(400).json({ error: 'requestId required' })
+    const trimmedReason = String(reason || '')
+      .slice(0, 200)
+      .trim()
+
+    const requestRef = db.collection('rescue_requests').doc(requestId)
+
+    let driverIdToRelease = null
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(requestRef)
+      if (!snap.exists) {
+        const err = new Error('request not found')
+        err.status = 404
+        throw err
+      }
+      const data = snap.data()
+      if (data.status === 'completed') {
+        const err = new Error('Already completed — cannot cancel')
+        err.status = 409
+        throw err
+      }
+      if (data.status === 'cancelled') {
+        // Idempotent — already cancelled, treat as success.
+        return
+      }
+      driverIdToRelease = data.assignedDriverId || null
+
+      tx.update(requestRef, {
+        status: 'cancelled',
+        cancelledAt: FieldValue.serverTimestamp(),
+        cancelledBy: 'patient',
+        cancellationReason: trimmedReason || 'patient_cancelled',
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+
+      if (driverIdToRelease) {
+        const driverRef = db.collection('drivers').doc(driverIdToRelease)
+        tx.set(
+          driverRef,
+          { isAvailable: true, currentRequestId: null },
+          { merge: true }
+        )
+      }
+    })
+
+    // Notify the driver so the active-trip screen exits cleanly.
+    if (driverIdToRelease) {
+      try {
+        const driverSnap = await db
+          .collection('drivers')
+          .doc(driverIdToRelease)
+          .get()
+        const token = driverSnap.data()?.fcmToken
+        if (token) {
+          await admin.messaging().send({
+            token,
+            notification: {
+              title: 'Trip cancelled',
+              body: 'The patient cancelled this request.',
+            },
+            data: { type: 'request_cancelled', requestId },
+          })
+        }
+      } catch (notifyErr) {
+        console.warn('cancel FCM notify failed:', notifyErr.message)
+      }
+    }
+
+    res.json({ ok: true })
+  } catch (e) {
+    console.error('cancel error:', e)
+    res.status(e.status || 500).json({ error: e.message })
   }
 })
 

@@ -221,38 +221,48 @@ class FirestoreService {
 
   /// Driver accepts a request using a transaction to prevent race conditions.
   /// Returns true if this driver won, false if someone else already accepted.
+  ///
+  /// We read the driver doc inside the transaction so we can denormalize
+  /// name/phone/vehicle/type onto the request in the SAME atomic write the
+  /// patient TrackPage (unauthenticated) reads — otherwise the patient sees
+  /// "ambulance assigned" with no driver-call button. Doing it post-transaction
+  /// also used to surface as a spurious "Network error" when the second write
+  /// hit a transient rejection even though the request was already assigned.
   Future<bool> driverAcceptRequest(String requestId, String driverId) async {
     bool accepted = false;
-    await _db.runTransaction((tx) async {
-      final ref = _db.doc(FirestorePaths.rescueRequest(requestId));
-      final snap = await tx.get(ref);
-      final data = snap.data();
-      if (data == null || data['assignedDriverId'] != null) return;
+    final requestRef = _db.doc(FirestorePaths.rescueRequest(requestId));
+    final driverRef = _db.doc(FirestorePaths.driver(driverId));
 
-      tx.update(ref, {
+    await _db.runTransaction((tx) async {
+      // All reads first — Firestore requires reads to precede writes.
+      final reqSnap = await tx.get(requestRef);
+      final reqData = reqSnap.data();
+      if (reqData == null || reqData['assignedDriverId'] != null) return;
+
+      final driverSnap = await tx.get(driverRef);
+      final driverData = driverSnap.data() ?? <String, dynamic>{};
+
+      // Writes.
+      tx.update(requestRef, {
         'assignedDriverId': driverId,
         'assignedDriverAcceptedAt': FieldValue.serverTimestamp(),
         'status': RequestStatus.driverAssigned.value,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'driverName': driverData['name'] ?? '',
+        'driverPhone': driverData['phone'] ?? '',
+        'driverVehicleNumber': driverData['vehicleNumber'] ?? '',
+        'driverAmbulanceType': driverData['ambulanceType'] ?? '',
+      });
+      tx.update(driverRef, {
+        'isAvailable': false,
+        'currentRequestId': requestId,
       });
       accepted = true;
     });
+
     if (accepted) {
-      final driver = await getDriver(driverId);
-      await Future.wait([
-        _db.doc(FirestorePaths.driver(driverId)).update({
-          'isAvailable': false,
-          'currentRequestId': requestId,
-        }),
-        _db.doc(FirestorePaths.rescueRequest(requestId)).set({
-          'updatedAt': FieldValue.serverTimestamp(),
-          'driverName': driver?.name ?? '',
-          'driverPhone': driver?.phone ?? '',
-          'driverVehicleNumber': driver?.vehicleNumber ?? '',
-          'driverAmbulanceType': driver != null
-              ? driver.ambulanceType.value
-              : '',
-        }, SetOptions(merge: true)),
-      ]);
+      // Best-effort downstream notify — must not surface as a network error
+      // to the driver, since the request is already and atomically theirs.
       await _notifyWhatsappEventBestEffort(requestId, 'driver_assigned');
     }
     return accepted;
@@ -484,21 +494,24 @@ class FirestoreService {
   Future<void> completeRide(String requestId, String driverId) async {
     // Freeing a hospital bed is handled server-side by the
     // onRequestCompleted Cloud Function (drivers cannot write hospital docs).
+    // The primary state transition is the request update — if that succeeds,
+    // the ride is complete from the patient's perspective. Driver bookkeeping
+    // and WhatsApp notify are best-effort so a transient blip on them does not
+    // surface as "Failed to complete" to a driver who has just finished.
     await _db.doc(FirestorePaths.rescueRequest(requestId)).update({
       'status': RequestStatus.completed.value,
       'completedAt': FieldValue.serverTimestamp(),
     });
-    // Count the ride immediately on completion, not on rating. Patients who
-    // never rate (the majority) would otherwise leave the counter at zero
-    // and break gamification + driver-of-the-month leaderboards. The
-    // backend /rescue/rate route no longer increments this, so we don't
-    // double-count when a rating does arrive.
-    await _db.doc(FirestorePaths.driver(driverId)).update({
-      'isAvailable': true,
-      'currentRequestId': null,
-      'completedRides': FieldValue.increment(1),
-      'lastCompletedRideAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _db.doc(FirestorePaths.driver(driverId)).update({
+        'isAvailable': true,
+        'currentRequestId': null,
+        'completedRides': FieldValue.increment(1),
+        'lastCompletedRideAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('completeRide: driver doc update failed for $driverId: $e');
+    }
     await _notifyWhatsappEventBestEffort(requestId, 'hospital_arrived');
   }
 

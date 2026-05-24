@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
+import '../../../core/services/alarm_service.dart';
 import '../../../core/services/firestore_service.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/models/rescue_request_model.dart';
@@ -27,7 +27,6 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
 
   int _secondsLeft = 30;
   Timer? _countdownTimer;
-  Timer? _attentionTimer;
   late AnimationController _pulseController;
   bool _accepting = false;
   bool _closing = false;
@@ -40,7 +39,10 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
       duration: const Duration(milliseconds: 800),
     )..repeat(reverse: true);
     _startCountdown();
-    _startAttentionLoop();
+    // Continuous siren + vibration loop until accept / decline / timeout.
+    // The OS notification fires once; this keeps the alarm going while the
+    // driver is looking at the in-app full-screen request.
+    unawaited(AlarmService.start());
   }
 
   void _startCountdown() {
@@ -54,26 +56,8 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
     });
   }
 
-  void _startAttentionLoop() {
-    _attentionTimer?.cancel();
-    unawaited(_grabAttention());
-    _attentionTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      if (_closing || _accepting || _secondsLeft <= 0) {
-        timer.cancel();
-        return;
-      }
-      unawaited(_grabAttention());
-    });
-  }
-
-  Future<void> _grabAttention() async {
-    await HapticFeedback.vibrate();
-    await SystemSound.play(SystemSoundType.alert);
-  }
-
   void _stopAttentionLoop() {
-    _attentionTimer?.cancel();
-    _attentionTimer = null;
+    unawaited(AlarmService.stop());
   }
 
   Future<void> _accept(RescueRequestModel request) async {
@@ -173,7 +157,7 @@ class _IncomingRequestScreenState extends State<IncomingRequestScreen>
       // User backed out of the sheet — resume countdown.
       if (mounted && !_closing) {
         _startCountdown();
-        _startAttentionLoop();
+        unawaited(AlarmService.start());
       }
       return;
     }

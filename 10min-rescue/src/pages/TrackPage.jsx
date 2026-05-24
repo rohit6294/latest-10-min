@@ -106,6 +106,8 @@ export default function TrackPage() {
   const [nowMs, setNowMs] = useState(Date.now())
   const [instructions, setInstructions] = useState([])
   const [ratingSubmitted, setRatingSubmitted] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const markersRef = useRef({})
@@ -347,6 +349,31 @@ export default function TrackPage() {
 
   const statusInfo = STATUS[req.status] || STATUS.pending_driver
   const colorCls = COLOR_CLASSES[statusInfo.color]
+  // Cancellation is only meaningful before the trip wraps up. Once the patient
+  // is being transported to the hospital we hide the button — calling 108 or
+  // the driver directly is the right escape hatch at that point.
+  const CANCELLABLE_STATUSES = ['pending_driver', 'driver_assigned']
+  const canCancel = CANCELLABLE_STATUSES.includes(req.status)
+
+  const handleCancel = async () => {
+    if (cancelling || !canCancel) return
+    const reason = window.prompt(
+      'Cancel this ambulance request?\n\nOptional: tell us why (e.g. found another ride, false alarm). Click OK to confirm cancellation, or Cancel to keep the request.',
+      ''
+    )
+    if (reason === null) return // user clicked browser-Cancel
+    setCancelError('')
+    setCancelling(true)
+    try {
+      await callBackend('/rescue/cancel', {
+        body: { requestId, reason: reason.trim() },
+      })
+    } catch (e) {
+      setCancelError(e.message || 'Could not cancel. Please try again.')
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   const dist = (driverLocation && target)
     ? distanceKm(driverLocation.lat, driverLocation.lng, target.lat, target.lng)
@@ -602,6 +629,29 @@ export default function TrackPage() {
         >
           📞 Emergency Line: +91 78660 67136
         </a>
+
+        {/* Cancel request — only shown while the trip can still be aborted.
+            Confirmation is in the click handler so accidental taps still
+            need a second action. */}
+        {canCancel && (
+          <div className="pt-2">
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="block w-full border-2 border-red-200 hover:border-red-400 text-red-600 hover:text-red-700 font-semibold text-center py-3 rounded-2xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {cancelling ? 'Cancelling…' : 'Cancel this request'}
+            </button>
+            {cancelError && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs text-center">
+                {cancelError}
+              </div>
+            )}
+            <p className="text-[11px] text-gray-400 text-center mt-2">
+              Cancelling notifies the driver and ends this request.
+            </p>
+          </div>
+        )}
       </div>
 
       <style>{`

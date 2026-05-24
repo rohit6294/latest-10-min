@@ -981,6 +981,7 @@ class _HospitalLegInstructionsStripe extends StatelessWidget {
       builder: (context, snap) {
         final items = snap.data ?? const <Map<String, dynamic>>[];
         if (items.isEmpty) return const SizedBox.shrink();
+        final maxListHeight = MediaQuery.of(context).size.height * 0.3;
         return Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -992,6 +993,7 @@ class _HospitalLegInstructionsStripe extends StatelessWidget {
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
@@ -1013,10 +1015,21 @@ class _HospitalLegInstructionsStripe extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              ...items.map(
-                (it) => Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: _hospitalLegInstructionRow(it),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxListHeight),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: items
+                        .map(
+                          (it) => Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: _hospitalLegInstructionRow(it),
+                          ),
+                        )
+                        .toList(),
+                  ),
                 ),
               ),
             ],
